@@ -263,14 +263,17 @@ export class VODAnalyzer {
   /**
    * Score each frame for "excitement" (0-100).
    *
-   * **Current implementation: placeholder / heuristic.**
+   * **Current implementation: enhanced mock with realistic patterns.**
    * In production, this will call Gemini Flash or TwelveLabs to
    * analyze frame content (kills, deaths, clutch situations, chat
    * spam spikes, audio peaks, etc.).
    *
-   * The placeholder uses a seeded pseudo-random approach with
-   * some synthetic patterns (rising tension, periodic spikes)
-   * to produce realistic-looking highlight distributions.
+   * The mock generates realistic highlight distributions with:
+   * - Kill moments with multi-kill detection
+   * - Clutch situations (1vX)
+   * - Emotion peaks (rage, celebration, surprise)
+   * - Objective plays (plants, defuses, captures)
+   * - Momentum shifts
    *
    * @param {FrameData[]} frames - Extracted frame data
    * @returns {Promise<Highlight[]>} Scored highlights (only frames above threshold)
@@ -280,43 +283,128 @@ export class VODAnalyzer {
     const minGap = this.config.highlights?.minGapSeconds ?? 5;
     const maxHighlights = this.config.highlights?.maxHighlights ?? 20;
 
-    const allScored = frames.map((frame, i) => {
-      // Placeholder scoring:
-      // - Base noise (0-40)
-      // - Periodic excitement spikes every ~30 frames
-      // - Rising tension curve toward the end
-      const noise = Math.abs(Math.sin(i * 0.7) * 20 + Math.cos(i * 1.3) * 20);
-      const spike = (i % 30 < 3) ? 30 + Math.random() * 20 : 0;
-      const tension = (i / frames.length) * 25; // Rises toward end
-      const jitter = Math.random() * 10;
+    // Generate realistic gameplay events across the timeline
+    const totalFrames = frames.length;
+    const events = this._generateMockGameplayEvents(totalFrames);
 
-      const score = Math.min(100, Math.round(noise + spike + tension + jitter));
+    const allScored = frames.map((frame, i) => {
+      // Base activity level with natural variance
+      const noise = Math.abs(Math.sin(i * 0.7) * 15 + Math.cos(i * 1.3) * 15);
+      const tension = (i / totalFrames) * 20;
+      const jitter = Math.random() * 8;
+
+      // Check if this frame aligns with a gameplay event
+      const event = events.find(e => Math.abs(e.frameIndex - i) < 3);
+      const eventBonus = event ? event.score : 0;
+      const eventType = event ? event.type : null;
+
+      const score = Math.min(100, Math.round(noise + tension + jitter + eventBonus));
       const reasons = [];
-      if (spike > 0) reasons.push('periodic activity spike');
+      const metadata = {};
+
+      if (event) {
+        reasons.push(event.reason);
+        metadata.eventType = event.type;
+        metadata.killCount = event.killCount || 0;
+        metadata.isClutch = event.isClutch || false;
+        metadata.isMultiKill = event.isMultiKill || false;
+        metadata.emotionType = event.emotionType || null;
+      }
       if (tension > 15) reasons.push('late-game tension');
-      if (score > 80) reasons.push('high excitement composite');
+      if (score > 85) reasons.push('high excitement composite');
 
       return {
         timestamp: frame.timestamp,
         score,
         frameIndex: frame.index,
         reason: reasons.length > 0 ? reasons.join(', ') : 'baseline activity',
+        type: eventType || 'ambient',
+        metadata,
       };
     });
 
     // Filter above threshold
     let highlights = allScored.filter((h) => h.score >= threshold);
 
-    // Enforce minimum gap (keep highest score in each cluster)
+    // Enforce minimum gap
     highlights = this._deduplicateHighlights(highlights, minGap);
 
     // Cap at max
     highlights = highlights
       .sort((a, b) => b.score - a.score)
       .slice(0, maxHighlights)
-      .sort((a, b) => a.timestamp - b.timestamp); // Re-sort chronologically
+      .sort((a, b) => a.timestamp - b.timestamp);
 
     return highlights;
+  }
+
+  /**
+   * Generate mock gameplay events for realistic analysis output.
+   * Creates a believable distribution of kills, clutches, objectives,
+   * and emotion peaks across a video timeline.
+   *
+   * @param {number} totalFrames - Total number of frames
+   * @returns {Array<Object>} Mock gameplay events
+   * @private
+   */
+  _generateMockGameplayEvents(totalFrames) {
+    const events = [];
+
+    // Kill moments — scattered throughout with clusters
+    const killTimings = [0.08, 0.15, 0.22, 0.35, 0.42, 0.55, 0.63, 0.72, 0.78, 0.85, 0.92];
+    for (const t of killTimings) {
+      const isMulti = Math.random() > 0.7;
+      const killCount = isMulti ? Math.floor(Math.random() * 3) + 2 : 1;
+      events.push({
+        frameIndex: Math.floor(t * totalFrames),
+        type: 'kill',
+        score: isMulti ? 55 + killCount * 10 : 35 + Math.random() * 20,
+        reason: isMulti ? `multi-kill (${killCount}K)` : 'kill confirmed',
+        killCount,
+        isMultiKill: isMulti,
+      });
+    }
+
+    // Clutch moments — rare, high-value
+    const clutchTimings = [0.45, 0.75, 0.88];
+    for (const t of clutchTimings) {
+      const vsCount = Math.floor(Math.random() * 3) + 2;
+      events.push({
+        frameIndex: Math.floor(t * totalFrames),
+        type: 'clutch',
+        score: 75 + Math.random() * 25,
+        reason: `1v${vsCount} clutch situation`,
+        isClutch: true,
+        killCount: vsCount,
+      });
+    }
+
+    // Emotion peaks — reactions
+    const emotionTimings = [0.12, 0.48, 0.65, 0.90];
+    const emotionTypes = ['celebration', 'surprise', 'frustration', 'celebration'];
+    for (let i = 0; i < emotionTimings.length; i++) {
+      events.push({
+        frameIndex: Math.floor(emotionTimings[i] * totalFrames),
+        type: 'emotion',
+        score: 40 + Math.random() * 35,
+        reason: `emotion peak: ${emotionTypes[i]}`,
+        emotionType: emotionTypes[i],
+      });
+    }
+
+    // Objective plays
+    const objTimings = [0.30, 0.60, 0.82];
+    const objTypes = ['bomb plant', 'objective captured', 'round-winning defuse'];
+    for (let i = 0; i < objTimings.length; i++) {
+      events.push({
+        frameIndex: Math.floor(objTimings[i] * totalFrames),
+        type: 'objective',
+        score: 45 + Math.random() * 30,
+        reason: objTypes[i],
+      });
+    }
+
+    return events;
   }
 
   // ── Narrative Building ──────────────────────────────────────────────────

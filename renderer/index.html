@@ -10,19 +10,27 @@
   <!-- Titlebar drag region -->
   <div class="titlebar">
     <div class="titlebar-drag"></div>
-    <span class="titlebar-title">KAIRO</span>
+    <div class="titlebar-center">
+      <span class="titlebar-title">KAIRO</span>
+      <span class="titlebar-badge">AI</span>
+    </div>
+    <div class="titlebar-status">
+      <span class="status-dot online"></span>
+      <span class="status-text">Ready</span>
+    </div>
   </div>
 
   <!-- Main App Layout -->
   <div class="app-container">
 
-    <!-- Sidebar -->
+    <!-- ═══════ LEFT SIDEBAR ═══════ -->
     <aside class="sidebar">
       <div class="sidebar-logo">
         <div class="logo-icon">K</div>
         <span class="logo-text">KAIRO</span>
         <span class="logo-badge">AI</span>
       </div>
+
       <nav class="sidebar-nav">
         <a href="#" class="nav-item active" data-section="dashboard">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
@@ -36,6 +44,10 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
           Templates
         </a>
+        <a href="#" class="nav-item" data-section="personas">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Personas
+        </a>
         <a href="#" class="nav-item" data-section="enhance">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26z"/></svg>
           Enhance
@@ -45,7 +57,43 @@
           Export
         </a>
       </nav>
+
+      <!-- Projects List -->
+      <div class="sidebar-projects">
+        <div class="sidebar-section-label">
+          <span>RECENT PROJECTS</span>
+          <button class="btn-tiny" id="btn-new-project" title="New Project">+</button>
+        </div>
+        <div class="project-list" id="project-list">
+          <div class="project-item active" data-id="demo-1">
+            <div class="project-color" style="background: #8b5cf6;"></div>
+            <div class="project-info">
+              <span class="project-name">Valorant Session #12</span>
+              <span class="project-meta">3 clips • 2m ago</span>
+            </div>
+          </div>
+          <div class="project-item" data-id="demo-2">
+            <div class="project-color" style="background: #3b82f6;"></div>
+            <div class="project-info">
+              <span class="project-name">CS2 Ranked Grind</span>
+              <span class="project-meta">7 clips • 1h ago</span>
+            </div>
+          </div>
+          <div class="project-item" data-id="demo-3">
+            <div class="project-color" style="background: #06b6d4;"></div>
+            <div class="project-info">
+              <span class="project-name">Apex Legends w/ Squad</span>
+              <span class="project-meta">5 clips • Yesterday</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="sidebar-footer">
+        <button class="sidebar-settings-btn" id="btn-settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          Settings
+        </button>
         <div class="user-badge">
           <div class="user-avatar">M</div>
           <div class="user-info">
@@ -56,14 +104,14 @@
       </div>
     </aside>
 
-    <!-- Main Content -->
+    <!-- ═══════ MAIN CONTENT AREA ═══════ -->
     <main class="main-content">
 
-      <!-- Header -->
+      <!-- Header Bar -->
       <header class="content-header">
         <div>
-          <h1 class="page-title">Dashboard</h1>
-          <p class="page-subtitle">Create story-driven clips from your gaming VODs</p>
+          <h1 class="page-title" id="page-title">Dashboard</h1>
+          <p class="page-subtitle" id="page-subtitle">Create story-driven clips from your gaming VODs</p>
         </div>
         <div class="header-actions">
           <button class="btn btn-secondary" id="btn-import-url">
@@ -77,89 +125,130 @@
         </div>
       </header>
 
-      <!-- Upload Area -->
-      <section class="upload-zone" id="upload-zone">
-        <div class="upload-zone-inner">
-          <div class="upload-icon">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-              <polyline points="17 8 12 3 7 8"/>
-              <line x1="12" y1="3" x2="12" y2="15"/>
-            </svg>
+      <!-- ─── Video Preview + Upload ─── -->
+      <div class="video-section">
+        <div class="video-preview" id="video-preview">
+          <div class="video-placeholder" id="upload-zone">
+            <div class="upload-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+            </div>
+            <h3>Drop your gaming VOD here</h3>
+            <p>MP4, MOV, MKV, WebM — up to 4 hours</p>
+            <p class="upload-hint">or paste a Twitch/YouTube URL</p>
           </div>
-          <h3>Drop your gaming VOD here</h3>
-          <p>MP4, MOV, MKV, WebM — up to 4 hours</p>
-          <p class="upload-hint">or paste a Twitch/YouTube URL</p>
+          <!-- Video player controls (shown when video loaded) -->
+          <div class="video-controls hidden" id="video-controls">
+            <button class="vc-btn" id="vc-play" title="Play/Pause">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </button>
+            <span class="vc-time" id="vc-time">00:00 / 00:00</span>
+            <div class="vc-progress">
+              <div class="vc-progress-bar" id="vc-progress-bar" style="width: 0%;"></div>
+            </div>
+            <button class="vc-btn" title="Fullscreen">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+            </button>
+          </div>
         </div>
+
+        <!-- AI Analysis Panel (right of video) -->
+        <div class="analysis-panel" id="analysis-panel">
+          <div class="panel-header">
+            <h3>AI Analysis</h3>
+            <span class="panel-badge" id="analysis-status">Waiting</span>
+          </div>
+
+          <div class="analysis-content" id="analysis-content">
+            <div class="analysis-empty">
+              <div class="analysis-empty-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              </div>
+              <p>Upload a VOD to see AI-detected highlights, kill moments, and emotion peaks.</p>
+            </div>
+          </div>
+
+          <button class="btn btn-primary btn-full" id="btn-analyze" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26z"/></svg>
+            Analyze VOD
+          </button>
+        </div>
+      </div>
+
+      <!-- ─── Story Arc Visualization ─── -->
+      <section class="section" id="story-section">
+        <div class="section-header">
+          <h2 class="section-title">Story Arc</h2>
+          <div class="story-title-display" id="story-title">
+            <span class="story-label">—</span>
+          </div>
+        </div>
+        <div class="story-arc-container" id="story-arc">
+          <div class="story-phase phase-hook">
+            <div class="phase-bar" style="height: 60%;"></div>
+            <span class="phase-label">Hook</span>
+          </div>
+          <div class="story-phase phase-rising">
+            <div class="phase-bar" style="height: 45%;"></div>
+            <span class="phase-label">Setup</span>
+          </div>
+          <div class="story-phase phase-rising">
+            <div class="phase-bar" style="height: 55%;"></div>
+            <span class="phase-label">Build</span>
+          </div>
+          <div class="story-phase phase-rising">
+            <div class="phase-bar" style="height: 70%;"></div>
+            <span class="phase-label">Tension</span>
+          </div>
+          <div class="story-phase phase-climax">
+            <div class="phase-bar" style="height: 95%;"></div>
+            <span class="phase-label">Climax</span>
+          </div>
+          <div class="story-phase phase-climax">
+            <div class="phase-bar" style="height: 85%;"></div>
+            <span class="phase-label">Peak</span>
+          </div>
+          <div class="story-phase phase-outro">
+            <div class="phase-bar" style="height: 50%;"></div>
+            <span class="phase-label">Resolve</span>
+          </div>
+          <div class="story-phase phase-outro">
+            <div class="phase-bar" style="height: 35%;"></div>
+            <span class="phase-label">Outro</span>
+          </div>
+        </div>
+        <p class="story-logline" id="story-logline">Upload a VOD and select a template to see your story arc.</p>
       </section>
 
-      <!-- Template Gallery -->
-      <section class="section">
+      <!-- ─── Template Gallery ─── -->
+      <section class="section" id="templates-section">
         <div class="section-header">
           <h2 class="section-title">Story Templates</h2>
-          <a href="#" class="section-link">View all →</a>
+          <div class="template-filters">
+            <button class="filter-btn active" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="FPS">FPS</button>
+            <button class="filter-btn" data-filter="Narrative">Narrative</button>
+            <button class="filter-btn" data-filter="Comedy">Comedy</button>
+            <button class="filter-btn" data-filter="Short-Form">Short</button>
+          </div>
         </div>
-        <div class="template-grid">
-          <div class="template-card" data-template="clutch">
-            <div class="template-preview clutch-preview">
-              <div class="template-overlay">
-                <span class="template-tag">FPS</span>
-              </div>
-              <div class="template-play">▶</div>
-            </div>
-            <div class="template-info">
-              <h4>Clutch Moment</h4>
-              <p>1vX tension build → execution → reaction</p>
-            </div>
-          </div>
-          <div class="template-card" data-template="highlight-reel">
-            <div class="template-preview reel-preview">
-              <div class="template-overlay">
-                <span class="template-tag">Universal</span>
-              </div>
-              <div class="template-play">▶</div>
-            </div>
-            <div class="template-info">
-              <h4>Highlight Reel</h4>
-              <p>Best moments → montage with music sync</p>
-            </div>
-          </div>
-          <div class="template-card" data-template="funny">
-            <div class="template-preview funny-preview">
-              <div class="template-overlay">
-                <span class="template-tag">Comedy</span>
-              </div>
-              <div class="template-play">▶</div>
-            </div>
-            <div class="template-info">
-              <h4>Funny Fails</h4>
-              <p>Fails + reactions → comedic timing edits</p>
-            </div>
-          </div>
-          <div class="template-card" data-template="storyline">
-            <div class="template-preview story-preview">
-              <div class="template-overlay">
-                <span class="template-tag">Narrative</span>
-              </div>
-              <div class="template-play">▶</div>
-            </div>
-            <div class="template-info">
-              <h4>Session Story</h4>
-              <p>Full session → narrative arc with chapters</p>
-            </div>
-          </div>
+        <div class="template-grid" id="template-grid">
+          <!-- Populated by JS -->
         </div>
       </section>
 
-      <!-- Enhancement Panel -->
-      <section class="section">
+      <!-- ─── Enhancement Panel ─── -->
+      <section class="section" id="enhance-section">
         <div class="section-header">
-          <h2 class="section-title">Enhance the Frame</h2>
+          <h2 class="section-title">Enhancement Controls</h2>
           <span class="section-badge">5 Modules</span>
         </div>
-        <p class="enhance-subtitle">Not the content. Adjust intensity per module — your story, your style.</p>
+        <p class="enhance-subtitle">Fine-tune how your story looks and sounds. Each module is independent.</p>
 
-        <div class="enhance-panel">
+        <div class="enhance-grid">
           <div class="enhance-module" data-module="bgm">
             <div class="module-header">
               <div class="module-icon">🎵</div>
@@ -227,17 +316,20 @@
         </div>
       </section>
 
-      <!-- Timeline Preview -->
-      <section class="section">
+      <!-- ─── Timeline ─── -->
+      <section class="section" id="timeline-section">
         <div class="section-header">
           <h2 class="section-title">Timeline Preview</h2>
           <div class="timeline-controls">
-            <button class="btn-icon" title="Zoom out">−</button>
-            <button class="btn-icon" title="Zoom in">+</button>
+            <button class="btn-icon" title="Zoom out" id="tl-zoom-out">−</button>
+            <span class="timeline-zoom-label" id="tl-zoom-label">100%</span>
+            <button class="btn-icon" title="Zoom in" id="tl-zoom-in">+</button>
+            <div class="tl-spacer"></div>
+            <button class="btn-icon" title="Play" id="tl-play">▶</button>
           </div>
         </div>
-        <div class="timeline-container">
-          <div class="timeline-ruler">
+        <div class="timeline-container" id="timeline-container">
+          <div class="timeline-ruler" id="timeline-ruler">
             <span>0:00</span><span>0:15</span><span>0:30</span><span>0:45</span><span>1:00</span>
           </div>
           <div class="timeline-track video-track">
@@ -246,13 +338,13 @@
               <div class="clip-block clip-intro" style="left: 0%; width: 12%;">
                 <span>Hook</span>
               </div>
-              <div class="clip-block clip-main" style="left: 14%; width: 45%;">
-                <span>Main Story</span>
+              <div class="clip-block clip-main" style="left: 14%; width: 38%;">
+                <span>Rising Action</span>
               </div>
-              <div class="clip-block clip-climax" style="left: 61%; width: 22%;">
+              <div class="clip-block clip-climax" style="left: 54%; width: 28%;">
                 <span>Climax</span>
               </div>
-              <div class="clip-block clip-outro" style="left: 85%; width: 14%;">
+              <div class="clip-block clip-outro" style="left: 84%; width: 15%;">
                 <span>Outro</span>
               </div>
             </div>
@@ -263,15 +355,25 @@
               <div class="audio-waveform"></div>
             </div>
           </div>
+          <div class="timeline-track fx-track">
+            <div class="track-label">FX</div>
+            <div class="track-content">
+              <div class="fx-block" style="left: 0%; width: 10%;" title="Zoom Pulse"><span>Zoom</span></div>
+              <div class="fx-block" style="left: 54%; width: 8%;" title="Slow Motion"><span>SlowMo</span></div>
+              <div class="fx-block" style="left: 64%; width: 5%;" title="Screen Shake"><span>Shake</span></div>
+              <div class="fx-block" style="left: 80%; width: 6%;" title="Flash"><span>Flash</span></div>
+            </div>
+          </div>
           <div class="timeline-track caption-track">
             <div class="track-label">Subs</div>
             <div class="track-content">
-              <div class="caption-block" style="left: 5%; width: 8%;"></div>
-              <div class="caption-block" style="left: 18%; width: 15%;"></div>
-              <div class="caption-block" style="left: 38%; width: 10%;"></div>
-              <div class="caption-block" style="left: 52%; width: 7%;"></div>
-              <div class="caption-block" style="left: 63%; width: 18%;"></div>
-              <div class="caption-block" style="left: 86%; width: 10%;"></div>
+              <div class="caption-block" style="left: 3%; width: 8%;"></div>
+              <div class="caption-block" style="left: 16%; width: 12%;"></div>
+              <div class="caption-block" style="left: 32%; width: 8%;"></div>
+              <div class="caption-block" style="left: 44%; width: 6%;"></div>
+              <div class="caption-block" style="left: 56%; width: 15%;"></div>
+              <div class="caption-block" style="left: 76%; width: 8%;"></div>
+              <div class="caption-block" style="left: 88%; width: 10%;"></div>
             </div>
           </div>
           <div class="timeline-playhead" id="playhead"></div>
@@ -279,6 +381,164 @@
       </section>
 
     </main>
+
+    <!-- ═══════ RIGHT PANEL ═══════ -->
+    <aside class="right-panel" id="right-panel">
+      <div class="rpanel-tabs">
+        <button class="rpanel-tab active" data-tab="suggestions">AI Suggestions</button>
+        <button class="rpanel-tab" data-tab="clips">Clips</button>
+      </div>
+
+      <!-- AI Suggestions Tab -->
+      <div class="rpanel-content" id="tab-suggestions">
+        <div class="suggestion-card">
+          <div class="suggestion-icon">💡</div>
+          <div class="suggestion-body">
+            <h4>Story Template</h4>
+            <p>Based on the gameplay patterns, <strong>Comeback King</strong> would tell the best story.</p>
+          </div>
+          <button class="btn-small btn-primary">Apply</button>
+        </div>
+        <div class="suggestion-card">
+          <div class="suggestion-icon">🎯</div>
+          <div class="suggestion-body">
+            <h4>Persona Match</h4>
+            <p>Your energy matches <strong>The Hype Machine</strong> profile. Want to auto-tune enhancements?</p>
+          </div>
+          <button class="btn-small btn-secondary">Try It</button>
+        </div>
+        <div class="suggestion-card">
+          <div class="suggestion-icon">⚡</div>
+          <div class="suggestion-body">
+            <h4>Detected: 3 Clutch Moments</h4>
+            <p>Slow-mo + zoom effects would amplify these. Enable in Enhancement panel.</p>
+          </div>
+          <button class="btn-small btn-secondary">Configure</button>
+        </div>
+        <div class="suggestion-card">
+          <div class="suggestion-icon">🎵</div>
+          <div class="suggestion-body">
+            <h4>Music Sync</h4>
+            <p>Your climax aligns perfectly with a beat drop at 0:42. Syncing recommended.</p>
+          </div>
+          <button class="btn-small btn-secondary">Sync</button>
+        </div>
+
+        <div class="rpanel-divider"></div>
+
+        <!-- Persona Selector -->
+        <div class="rpanel-section">
+          <h3 class="rpanel-section-title">Active Persona</h3>
+          <div class="persona-selector" id="persona-selector">
+            <div class="persona-chip active" data-persona="hypeStreamer">
+              <span class="persona-avatar">🔥</span>
+              <span>Hype Machine</span>
+            </div>
+            <div class="persona-chip" data-persona="chillStreamer">
+              <span class="persona-avatar">🧘</span>
+              <span>Zen Master</span>
+            </div>
+            <div class="persona-chip" data-persona="chaosGremlin">
+              <span class="persona-avatar">💀</span>
+              <span>Chaos Gremlin</span>
+            </div>
+            <div class="persona-chip" data-persona="tactician">
+              <span class="persona-avatar">🧠</span>
+              <span>Tactician</span>
+            </div>
+            <div class="persona-chip" data-persona="squadCaptain">
+              <span class="persona-avatar">🤝</span>
+              <span>Squad Captain</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Clips Tab -->
+      <div class="rpanel-content hidden" id="tab-clips">
+        <div class="clips-list" id="clips-list">
+          <div class="clip-card">
+            <div class="clip-thumbnail">
+              <div class="clip-thumb-gradient g1"></div>
+              <span class="clip-duration">0:47</span>
+            </div>
+            <div class="clip-details">
+              <h4>The Comeback — Clutch Ace</h4>
+              <p>Comeback King • 720p</p>
+              <div class="clip-actions">
+                <button class="btn-tiny">Preview</button>
+                <button class="btn-tiny btn-accent">Export</button>
+              </div>
+            </div>
+          </div>
+          <div class="clip-card">
+            <div class="clip-thumbnail">
+              <div class="clip-thumb-gradient g2"></div>
+              <span class="clip-duration">0:32</span>
+            </div>
+            <div class="clip-details">
+              <h4>1v3 Clutch — Round 14</h4>
+              <p>Clutch Master • 1080p</p>
+              <div class="clip-actions">
+                <button class="btn-tiny">Preview</button>
+                <button class="btn-tiny btn-accent">Export</button>
+              </div>
+            </div>
+          </div>
+          <div class="clip-card">
+            <div class="clip-thumbnail">
+              <div class="clip-thumb-gradient g3"></div>
+              <span class="clip-duration">0:58</span>
+            </div>
+            <div class="clip-details">
+              <h4>Session Story — Full Arc</h4>
+              <p>Session Story • 1080p</p>
+              <div class="clip-actions">
+                <button class="btn-tiny">Preview</button>
+                <button class="btn-tiny btn-accent">Export</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ═══════ BOTTOM BAR ═══════ -->
+  <div class="bottom-bar">
+    <div class="bb-left">
+      <span class="bb-label">Export:</span>
+      <select class="bb-select" id="bb-format">
+        <option value="mp4-1080">MP4 1080p</option>
+        <option value="mp4-4k">MP4 4K</option>
+        <option value="mp4-720">MP4 720p</option>
+        <option value="webm">WebM</option>
+        <option value="vertical-1080">Vertical 1080p (9:16)</option>
+      </select>
+      <select class="bb-select" id="bb-fps">
+        <option value="60">60fps</option>
+        <option value="30">30fps</option>
+        <option value="24">24fps (Cinematic)</option>
+      </select>
+    </div>
+    <div class="bb-center">
+      <div class="progress-container hidden" id="export-progress">
+        <div class="progress-bar">
+          <div class="progress-fill" id="progress-fill" style="width: 0%;"></div>
+        </div>
+        <span class="progress-text" id="progress-text">Rendering...</span>
+      </div>
+    </div>
+    <div class="bb-right">
+      <button class="btn btn-secondary btn-sm" id="btn-preview-export">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Preview
+      </button>
+      <button class="btn btn-primary btn-sm" id="btn-export">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export Clip
+      </button>
+    </div>
   </div>
 
   <script src="app.js"></script>
