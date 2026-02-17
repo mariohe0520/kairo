@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KAIRO</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Titlebar drag region -->
+  <div class="titlebar">
+    <div class="titlebar-drag"></div>
+    <span class="titlebar-title">KAIRO</span>
+  </div>
+
+  <!-- Main App Layout -->
+  <div class="app-container">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-icon">K</div>
+        <span class="logo-text">KAIRO</span>
+        <span class="logo-badge">AI</span>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#" class="nav-item active" data-section="dashboard">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          Dashboard
+        </a>
+        <a href="#" class="nav-item" data-section="projects">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+          Projects
+        </a>
+        <a href="#" class="nav-item" data-section="templates">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+          Templates
+        </a>
+        <a href="#" class="nav-item" data-section="enhance">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26z"/></svg>
+          Enhance
+        </a>
+        <a href="#" class="nav-item" data-section="export">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-badge">
+          <div class="user-avatar">M</div>
+          <div class="user-info">
+            <span class="user-name">Creator</span>
+            <span class="user-plan">Pro Plan</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+
+      <!-- Header -->
+      <header class="content-header">
+        <div>
+          <h1 class="page-title">Dashboard</h1>
+          <p class="page-subtitle">Create story-driven clips from your gaming VODs</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-secondary" id="btn-import-url">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+            Paste URL
+          </button>
+          <button class="btn btn-primary" id="btn-upload-vod">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Upload VOD
+          </button>
+        </div>
+      </header>
+
+      <!-- Upload Area -->
+      <section class="upload-zone" id="upload-zone">
+        <div class="upload-zone-inner">
+          <div class="upload-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+          </div>
+          <h3>Drop your gaming VOD here</h3>
+          <p>MP4, MOV, MKV, WebM — up to 4 hours</p>
+          <p class="upload-hint">or paste a Twitch/YouTube URL</p>
+        </div>
+      </section>
+
+      <!-- Template Gallery -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Story Templates</h2>
+          <a href="#" class="section-link">View all →</a>
+        </div>
+        <div class="template-grid">
+          <div class="template-card" data-template="clutch">
+            <div class="template-preview clutch-preview">
+              <div class="template-overlay">
+                <span class="template-tag">FPS</span>
+              </div>
+              <div class="template-play">▶</div>
+            </div>
+            <div class="template-info">
+              <h4>Clutch Moment</h4>
+              <p>1vX tension build → execution → reaction</p>
+            </div>
+          </div>
+          <div class="template-card" data-template="highlight-reel">
+            <div class="template-preview reel-preview">
+              <div class="template-overlay">
+                <span class="template-tag">Universal</span>
+              </div>
+              <div class="template-play">▶</div>
+            </div>
+            <div class="template-info">
+              <h4>Highlight Reel</h4>
+              <p>Best moments → montage with music sync</p>
+            </div>
+          </div>
+          <div class="template-card" data-template="funny">
+            <div class="template-preview funny-preview">
+              <div class="template-overlay">
+                <span class="template-tag">Comedy</span>
+              </div>
+              <div class="template-play">▶</div>
+            </div>
+            <div class="template-info">
+              <h4>Funny Fails</h4>
+              <p>Fails + reactions → comedic timing edits</p>
+            </div>
+          </div>
+          <div class="template-card" data-template="storyline">
+            <div class="template-preview story-preview">
+              <div class="template-overlay">
+                <span class="template-tag">Narrative</span>
+              </div>
+              <div class="template-play">▶</div>
+            </div>
+            <div class="template-info">
+              <h4>Session Story</h4>
+              <p>Full session → narrative arc with chapters</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Enhancement Panel -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Enhance the Frame</h2>
+          <span class="section-badge">5 Modules</span>
+        </div>
+        <p class="enhance-subtitle">Not the content. Adjust intensity per module — your story, your style.</p>
+
+        <div class="enhance-panel">
+          <div class="enhance-module" data-module="bgm">
+            <div class="module-header">
+              <div class="module-icon">🎵</div>
+              <div class="module-label">
+                <h4>BGM</h4>
+                <p>Background Music</p>
+              </div>
+              <span class="module-value" id="val-bgm">65%</span>
+            </div>
+            <input type="range" min="0" max="100" value="65" class="enhance-slider" id="slider-bgm">
+            <div class="slider-labels"><span>Silent</span><span>Full Score</span></div>
+          </div>
+
+          <div class="enhance-module" data-module="subtitles">
+            <div class="module-header">
+              <div class="module-icon">📝</div>
+              <div class="module-label">
+                <h4>Subtitles</h4>
+                <p>Context-Aware Captions</p>
+              </div>
+              <span class="module-value" id="val-subtitles">80%</span>
+            </div>
+            <input type="range" min="0" max="100" value="80" class="enhance-slider" id="slider-subtitles">
+            <div class="slider-labels"><span>Off</span><span>Full Styled</span></div>
+          </div>
+
+          <div class="enhance-module" data-module="effects">
+            <div class="module-header">
+              <div class="module-icon">✨</div>
+              <div class="module-label">
+                <h4>Effects</h4>
+                <p>Zoom, Slow-Mo, Shake</p>
+              </div>
+              <span class="module-value" id="val-effects">45%</span>
+            </div>
+            <input type="range" min="0" max="100" value="45" class="enhance-slider" id="slider-effects">
+            <div class="slider-labels"><span>Clean</span><span>Cinematic</span></div>
+          </div>
+
+          <div class="enhance-module" data-module="hook">
+            <div class="module-header">
+              <div class="module-icon">🪝</div>
+              <div class="module-label">
+                <h4>Hook</h4>
+                <p>Opening Attention Grab</p>
+              </div>
+              <span class="module-value" id="val-hook">70%</span>
+            </div>
+            <input type="range" min="0" max="100" value="70" class="enhance-slider" id="slider-hook">
+            <div class="slider-labels"><span>Subtle</span><span>Maximum Bait</span></div>
+          </div>
+
+          <div class="enhance-module" data-module="transitions">
+            <div class="module-header">
+              <div class="module-icon">🔄</div>
+              <div class="module-label">
+                <h4>Transitions</h4>
+                <p>Scene Flow & Pacing</p>
+              </div>
+              <span class="module-value" id="val-transitions">55%</span>
+            </div>
+            <input type="range" min="0" max="100" value="55" class="enhance-slider" id="slider-transitions">
+            <div class="slider-labels"><span>Hard Cut</span><span>Smooth Flow</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Timeline Preview -->
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Timeline Preview</h2>
+          <div class="timeline-controls">
+            <button class="btn-icon" title="Zoom out">−</button>
+            <button class="btn-icon" title="Zoom in">+</button>
+          </div>
+        </div>
+        <div class="timeline-container">
+          <div class="timeline-ruler">
+            <span>0:00</span><span>0:15</span><span>0:30</span><span>0:45</span><span>1:00</span>
+          </div>
+          <div class="timeline-track video-track">
+            <div class="track-label">Video</div>
+            <div class="track-content">
+              <div class="clip-block clip-intro" style="left: 0%; width: 12%;">
+                <span>Hook</span>
+              </div>
+              <div class="clip-block clip-main" style="left: 14%; width: 45%;">
+                <span>Main Story</span>
+              </div>
+              <div class="clip-block clip-climax" style="left: 61%; width: 22%;">
+                <span>Climax</span>
+              </div>
+              <div class="clip-block clip-outro" style="left: 85%; width: 14%;">
+                <span>Outro</span>
+              </div>
+            </div>
+          </div>
+          <div class="timeline-track audio-track">
+            <div class="track-label">BGM</div>
+            <div class="track-content">
+              <div class="audio-waveform"></div>
+            </div>
+          </div>
+          <div class="timeline-track caption-track">
+            <div class="track-label">Subs</div>
+            <div class="track-content">
+              <div class="caption-block" style="left: 5%; width: 8%;"></div>
+              <div class="caption-block" style="left: 18%; width: 15%;"></div>
+              <div class="caption-block" style="left: 38%; width: 10%;"></div>
+              <div class="caption-block" style="left: 52%; width: 7%;"></div>
+              <div class="caption-block" style="left: 63%; width: 18%;"></div>
+              <div class="caption-block" style="left: 86%; width: 10%;"></div>
+            </div>
+          </div>
+          <div class="timeline-playhead" id="playhead"></div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
