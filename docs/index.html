@@ -376,6 +376,339 @@ footer{
   -webkit-mask-image:radial-gradient(ellipse at 50% 30%,black 20%,transparent 70%);
 }
 
+/* ── Interactive Demo ── */
+.interactive-demo{padding:120px 0;position:relative}
+.demo-area{
+  margin-top:64px;padding:48px;border-radius:24px;
+  background:var(--bg-elevated);border:1px solid var(--border);
+  position:relative;overflow:hidden;
+}
+.demo-area::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:var(--gradient);opacity:0.5;
+}
+.demo-upload{text-align:center;padding:48px 0}
+.demo-upload-zone{
+  display:inline-flex;flex-direction:column;align-items:center;gap:16px;
+  padding:48px 64px;border-radius:16px;
+  border:2px dashed rgba(124,58,237,0.3);
+  background:rgba(124,58,237,0.03);
+  cursor:pointer;transition:border-color 0.3s,background 0.3s;
+}
+.demo-upload-zone:hover{border-color:rgba(124,58,237,0.5);background:rgba(124,58,237,0.06)}
+.demo-upload-zone svg{width:40px;height:40px;color:var(--accent-1);opacity:0.7}
+.demo-upload-zone .upload-label{font-size:1.1rem;font-weight:600;color:var(--text)}
+.demo-upload-zone .upload-hint{font-size:0.85rem;color:var(--text-muted)}
+.demo-upload-btn{
+  margin-top:24px;padding:12px 32px;border-radius:10px;
+  background:var(--gradient);color:#fff;border:none;
+  font-size:0.95rem;font-weight:600;cursor:pointer;
+  transition:transform 0.2s,box-shadow 0.3s;
+  box-shadow:0 4px 20px rgba(124,58,237,0.3);
+}
+.demo-upload-btn:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(124,58,237,0.4)}
+.demo-upload-btn:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+
+/* Progress bar */
+.demo-progress{display:none;margin-top:32px}
+.demo-progress.active{display:block}
+.progress-bar-track{
+  width:100%;max-width:480px;height:6px;border-radius:3px;
+  background:rgba(255,255,255,0.06);margin:0 auto 12px;overflow:hidden;
+}
+.progress-bar-fill{
+  height:100%;width:0;border-radius:3px;
+  background:var(--gradient);
+  transition:width 0.4s ease;
+}
+.progress-status{font-size:0.85rem;color:var(--text-muted);text-align:center}
+
+/* Analysis results */
+.demo-results{display:none}
+.demo-results.active{display:block;animation:fadeSlideIn 0.6s ease}
+@keyframes fadeSlideIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+
+.analysis-header{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:24px;padding-bottom:16px;
+  border-bottom:1px solid var(--border);
+}
+.analysis-title{font-size:1.2rem;font-weight:700}
+.analysis-meta{font-size:0.85rem;color:var(--text-muted)}
+
+/* Timeline visualization */
+.demo-timeline{
+  position:relative;height:48px;margin-bottom:32px;
+  background:rgba(255,255,255,0.02);border-radius:8px;
+  border:1px solid var(--border);overflow:hidden;
+}
+.timeline-ruler{
+  display:flex;justify-content:space-between;
+  padding:4px 12px 0;font-size:0.65rem;color:var(--text-muted);
+}
+.timeline-markers{position:relative;height:28px;margin:0 12px}
+.timeline-marker{
+  position:absolute;height:100%;border-radius:4px;
+  cursor:pointer;transition:opacity 0.3s,filter 0.3s;
+  display:flex;align-items:center;justify-content:center;
+  font-size:0.6rem;font-weight:600;color:#fff;
+}
+.timeline-marker:hover{filter:brightness(1.2)}
+.timeline-marker.type-kill{background:rgba(239,68,68,0.6)}
+.timeline-marker.type-clutch{background:rgba(124,58,237,0.6)}
+.timeline-marker.type-celebration{background:rgba(34,211,238,0.6)}
+.timeline-marker.type-streak{background:rgba(251,191,36,0.6)}
+.timeline-marker.excluded{opacity:0.25}
+
+/* Highlight cards */
+.highlight-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-bottom:32px}
+.highlight-card{
+  padding:20px;border-radius:14px;
+  background:rgba(255,255,255,0.02);border:1px solid var(--border);
+  transition:border-color 0.3s,transform 0.2s;
+}
+.highlight-card:hover{border-color:rgba(124,58,237,0.2);transform:translateY(-2px)}
+.highlight-card-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.highlight-type{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:4px 10px;border-radius:6px;
+  font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;
+}
+.highlight-type.type-kill{background:rgba(239,68,68,0.15);color:#f87171}
+.highlight-type.type-clutch{background:rgba(124,58,237,0.15);color:#a78bfa}
+.highlight-type.type-celebration{background:rgba(34,211,238,0.15);color:#22d3ee}
+.highlight-type.type-streak{background:rgba(251,191,36,0.15);color:#fbbf24}
+.highlight-toggle{
+  position:relative;width:40px;height:22px;border-radius:11px;
+  background:rgba(255,255,255,0.1);border:none;cursor:pointer;
+  transition:background 0.3s;
+}
+.highlight-toggle.on{background:rgba(124,58,237,0.5)}
+.highlight-toggle::after{
+  content:'';position:absolute;top:2px;left:2px;
+  width:18px;height:18px;border-radius:50%;
+  background:#fff;transition:transform 0.3s;
+}
+.highlight-toggle.on::after{transform:translateX(18px)}
+.highlight-timestamp{font-size:1rem;font-weight:700;margin-bottom:4px}
+.highlight-description{font-size:0.85rem;color:var(--text-muted);margin-bottom:8px}
+.highlight-confidence{font-size:0.75rem;color:var(--text-muted)}
+.highlight-confidence span{color:var(--accent-3);font-weight:600}
+
+/* Generate story button */
+.demo-generate{text-align:center;margin-top:16px}
+.demo-generate-btn{
+  padding:14px 36px;border-radius:12px;
+  background:var(--gradient);color:#fff;border:none;
+  font-size:1rem;font-weight:600;cursor:pointer;
+  transition:transform 0.2s,box-shadow 0.3s;
+  box-shadow:0 4px 24px rgba(124,58,237,0.3);
+}
+.demo-generate-btn:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(124,58,237,0.4)}
+.demo-generate-btn:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+
+/* Story structure */
+.story-result{display:none;margin-top:32px}
+.story-result.active{display:block;animation:fadeSlideIn 0.6s ease}
+.story-header{
+  font-size:1.1rem;font-weight:700;margin-bottom:20px;
+  padding-bottom:12px;border-bottom:1px solid var(--border);
+}
+.story-segments{display:flex;flex-direction:column;gap:12px}
+.story-segment{
+  display:flex;gap:20px;padding:20px;border-radius:14px;
+  background:rgba(255,255,255,0.02);border:1px solid var(--border);
+  transition:border-color 0.3s;
+  animation:fadeSlideIn 0.5s ease backwards;
+}
+.story-segment:nth-child(1){animation-delay:0.1s}
+.story-segment:nth-child(2){animation-delay:0.3s}
+.story-segment:nth-child(3){animation-delay:0.5s}
+.story-segment:nth-child(4){animation-delay:0.7s}
+.story-segment:hover{border-color:rgba(124,58,237,0.2)}
+.segment-time{
+  flex-shrink:0;width:100px;
+  font-size:0.8rem;font-weight:600;font-variant-numeric:tabular-nums;
+  padding-top:2px;
+}
+.segment-time .segment-label{
+  display:block;font-size:0.7rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:0.08em;
+  margin-bottom:4px;
+}
+.segment-time .segment-label.hook{color:#f87171}
+.segment-time .segment-label.rising{color:#fbbf24}
+.segment-time .segment-label.climax{color:#a78bfa}
+.segment-time .segment-label.outro{color:#22d3ee}
+.segment-time .time-range{color:var(--text-muted)}
+.segment-body h4{font-size:0.95rem;font-weight:600;margin-bottom:4px}
+.segment-body p{font-size:0.85rem;color:var(--text-muted);line-height:1.5}
+
+/* Processing spinner */
+.processing-spinner{
+  display:none;text-align:center;padding:32px 0;
+}
+.processing-spinner.active{display:block}
+.spinner-ring{
+  display:inline-block;width:48px;height:48px;
+  border:3px solid rgba(124,58,237,0.2);
+  border-top-color:var(--accent-1);
+  border-radius:50%;
+  animation:spin 0.8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner-text{margin-top:16px;font-size:0.9rem;color:var(--text-muted)}
+
+/* ── Template Gallery ── */
+.template-gallery{padding:120px 0}
+.templates-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:64px;
+}
+.template-card{
+  padding:28px;border-radius:18px;
+  background:var(--bg-card);border:1px solid var(--border);
+  cursor:pointer;transition:transform 0.3s,border-color 0.3s,box-shadow 0.3s;
+  position:relative;overflow:hidden;
+}
+.template-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:var(--gradient);opacity:0;transition:opacity 0.3s;
+}
+.template-card:hover{transform:translateY(-4px);border-color:rgba(124,58,237,0.2)}
+.template-card:hover::before{opacity:0.6}
+.template-card.selected{
+  border-color:rgba(124,58,237,0.4);
+  box-shadow:0 0 40px rgba(124,58,237,0.1);
+}
+.template-card.selected::before{opacity:1}
+.template-preview{
+  width:100%;height:120px;border-radius:10px;margin-bottom:20px;
+  background:var(--gradient-subtle);
+  display:flex;align-items:center;justify-content:center;
+  position:relative;overflow:hidden;
+}
+.template-preview svg{width:32px;height:32px;color:var(--accent-1);opacity:0.5}
+.template-preview-bars{
+  display:flex;align-items:flex-end;gap:3px;height:60px;
+}
+.template-preview-bars .bar{
+  width:6px;border-radius:2px;
+  background:var(--gradient);opacity:0.4;
+}
+.template-card h3{font-size:1.05rem;font-weight:700;margin-bottom:6px}
+.template-card .template-desc{font-size:0.85rem;color:var(--text-muted);margin-bottom:12px;line-height:1.5}
+.template-meta{display:flex;gap:12px;flex-wrap:wrap}
+.template-tag{
+  padding:4px 10px;border-radius:6px;
+  background:rgba(255,255,255,0.04);
+  font-size:0.7rem;font-weight:500;color:var(--text-muted);
+}
+
+/* Template output preview */
+.template-output{
+  display:none;margin-top:32px;padding:32px;border-radius:18px;
+  background:var(--bg-card);border:1px solid var(--border);
+  animation:fadeSlideIn 0.5s ease;
+}
+.template-output.active{display:block}
+.template-output-title{font-size:1rem;font-weight:700;margin-bottom:16px}
+.output-structure{display:flex;flex-direction:column;gap:8px}
+.output-block{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 16px;border-radius:10px;
+  background:rgba(255,255,255,0.02);
+}
+.output-block-time{
+  font-size:0.75rem;font-weight:600;color:var(--text-muted);
+  font-variant-numeric:tabular-nums;flex-shrink:0;width:80px;
+}
+.output-block-bar{
+  flex:1;height:4px;border-radius:2px;
+  background:var(--gradient-subtle);position:relative;overflow:hidden;
+}
+.output-block-bar::after{
+  content:'';position:absolute;inset:0;
+  background:var(--gradient);border-radius:2px;
+}
+.output-block-label{
+  font-size:0.8rem;font-weight:600;flex-shrink:0;
+}
+
+/* ── Persona Preview ── */
+.persona-preview{padding:120px 0}
+.personas-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:64px;
+}
+.persona-card{
+  padding:32px;border-radius:20px;
+  position:relative;overflow:hidden;
+  transition:transform 0.3s;
+}
+.persona-card:hover{transform:translateY(-4px)}
+.persona-card::before{
+  content:'';position:absolute;inset:0;opacity:0.06;
+  border-radius:20px;
+}
+.persona-card.persona-hype{
+  border:1px solid rgba(239,68,68,0.2);
+  background:linear-gradient(135deg,rgba(239,68,68,0.05),rgba(251,146,60,0.03));
+}
+.persona-card.persona-hype::before{background:linear-gradient(135deg,#ef4444,#fb923c)}
+.persona-card.persona-chill{
+  border:1px solid rgba(59,130,246,0.2);
+  background:linear-gradient(135deg,rgba(59,130,246,0.05),rgba(34,211,238,0.03));
+}
+.persona-card.persona-chill::before{background:linear-gradient(135deg,#3b82f6,#22d3ee)}
+.persona-card.persona-silent{
+  border:1px solid rgba(124,58,237,0.2);
+  background:linear-gradient(135deg,rgba(124,58,237,0.05),rgba(168,85,247,0.03));
+}
+.persona-card.persona-silent::before{background:linear-gradient(135deg,#7c3aed,#a855f7)}
+.persona-avatar{
+  width:56px;height:56px;border-radius:16px;
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:20px;font-size:1.5rem;font-weight:800;color:#fff;
+}
+.persona-hype .persona-avatar{background:linear-gradient(135deg,#ef4444,#fb923c)}
+.persona-chill .persona-avatar{background:linear-gradient(135deg,#3b82f6,#22d3ee)}
+.persona-silent .persona-avatar{background:linear-gradient(135deg,#7c3aed,#a855f7)}
+.persona-card h3{font-size:1.15rem;font-weight:700;margin-bottom:6px}
+.persona-style{font-size:0.9rem;color:var(--text-muted);margin-bottom:16px;line-height:1.5}
+.persona-detail{display:flex;flex-direction:column;gap:8px}
+.persona-detail-row{display:flex;align-items:center;gap:8px;font-size:0.8rem}
+.persona-detail-label{color:var(--text-muted);flex-shrink:0}
+.persona-detail-value{font-weight:600;color:var(--text)}
+.persona-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.persona-tag{
+  padding:4px 10px;border-radius:6px;
+  font-size:0.7rem;font-weight:500;
+}
+.persona-hype .persona-tag{background:rgba(239,68,68,0.1);color:#f87171}
+.persona-chill .persona-tag{background:rgba(59,130,246,0.1);color:#60a5fa}
+.persona-silent .persona-tag{background:rgba(124,58,237,0.1);color:#a78bfa}
+
+/* ── Stats Section ── */
+.stats-section{padding:100px 0}
+.stats-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:32px;
+}
+.stat-card{
+  text-align:center;padding:48px 32px;border-radius:20px;
+  background:var(--bg-card);border:1px solid var(--border);
+  transition:transform 0.3s,border-color 0.3s;
+}
+.stat-card:hover{transform:translateY(-4px);border-color:rgba(124,58,237,0.2)}
+.stat-value{
+  font-size:clamp(3rem,7vw,4.5rem);font-weight:900;
+  line-height:1;margin-bottom:8px;
+  background:var(--gradient-text);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+.stat-unit{font-size:0.5em;font-weight:700}
+.stat-label{font-size:1.05rem;font-weight:600;margin-bottom:4px}
+.stat-sublabel{font-size:0.85rem;color:var(--text-muted)}
+
 /* ── Responsive ── */
 @media(max-width:900px){
   .steps{grid-template-columns:1fr}
@@ -383,12 +716,21 @@ footer{
   .comparison-grid{grid-template-columns:1fr}
   .footer-grid{grid-template-columns:1fr 1fr}
   .nav-links a:not(.nav-cta){display:none}
+  .templates-grid{grid-template-columns:1fr 1fr}
+  .personas-grid{grid-template-columns:1fr}
+  .stats-grid{grid-template-columns:1fr}
+  .story-segment{flex-direction:column;gap:8px}
+  .segment-time{width:auto}
 }
 @media(max-width:600px){
   .hero h1{font-size:3.5rem}
   .footer-grid{grid-template-columns:1fr}
   .footer-bottom{flex-direction:column;gap:16px;text-align:center}
   .streamers-content{padding:40px 24px}
+  .templates-grid{grid-template-columns:1fr}
+  .demo-area{padding:24px}
+  .demo-upload-zone{padding:32px}
+  .highlight-cards{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -402,9 +744,9 @@ footer{
     <div class="nav-logo">KAIRO</div>
     <div class="nav-links">
       <a href="#how-it-works">How It Works</a>
+      <a href="#demo">Try Demo</a>
       <a href="#features">Features</a>
       <a href="#comparison">Why KAIRO</a>
-      <a href="#streamers">For Streamers</a>
       <a href="#" class="nav-cta">Join Waitlist</a>
     </div>
   </div>
@@ -473,6 +815,112 @@ footer{
         </div>
         <h3>Get Story-Driven Clips</h3>
         <p>Receive clips with narrative structure: setup, climax, payoff. Ready for TikTok, Shorts, and Reels.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ Interactive Demo ══ -->
+<section class="interactive-demo" id="demo">
+  <div class="container">
+    <div class="reveal">
+      <p class="section-label">Interactive Demo</p>
+      <h2 class="section-title">See it <span class="gradient-text">in action</span></h2>
+      <p class="section-desc">Upload a VOD (simulated) and watch KAIRO analyze, detect highlights, and generate a story-driven clip structure.</p>
+    </div>
+    <div class="demo-area reveal reveal-delay-1">
+      <!-- Upload phase -->
+      <div id="demo-upload" class="demo-upload">
+        <div class="demo-upload-zone" id="demo-upload-zone">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span class="upload-label">Drop your VOD here</span>
+          <span class="upload-hint">Or click to browse -- supports MP4, MKV, MOV</span>
+        </div>
+        <br>
+        <button class="demo-upload-btn" id="demo-upload-btn">Analyze Gameplay</button>
+        <div class="demo-progress" id="demo-progress">
+          <div class="progress-bar-track"><div class="progress-bar-fill" id="demo-progress-fill"></div></div>
+          <p class="progress-status" id="demo-progress-status">Initializing analysis...</p>
+        </div>
+      </div>
+
+      <!-- Results phase -->
+      <div id="demo-results" class="demo-results">
+        <div class="analysis-header">
+          <div>
+            <div class="analysis-title">Analysis Complete</div>
+            <div class="analysis-meta">gameplay_session_2026-02-17.mp4 -- 47:32 duration -- 6 highlights detected</div>
+          </div>
+        </div>
+
+        <!-- Timeline -->
+        <div class="demo-timeline">
+          <div class="timeline-ruler">
+            <span>0:00</span><span>10:00</span><span>20:00</span><span>30:00</span><span>40:00</span><span>47:32</span>
+          </div>
+          <div class="timeline-markers" id="demo-timeline-markers"></div>
+        </div>
+
+        <!-- Highlight cards -->
+        <div class="highlight-cards" id="highlight-cards"></div>
+
+        <!-- Generate story -->
+        <div class="demo-generate">
+          <button class="demo-generate-btn" id="demo-generate-btn">Generate Story Structure</button>
+        </div>
+
+        <!-- Processing spinner -->
+        <div class="processing-spinner" id="story-spinner">
+          <div class="spinner-ring"></div>
+          <p class="spinner-text">Building narrative arc...</p>
+        </div>
+
+        <!-- Story output -->
+        <div class="story-result" id="story-result">
+          <div class="story-header">Story Structure -- 30s Clip</div>
+          <div class="story-segments">
+            <div class="story-segment">
+              <div class="segment-time">
+                <span class="segment-label hook">Hook</span>
+                <span class="time-range">0:00 - 0:05</span>
+              </div>
+              <div class="segment-body">
+                <h4>The clutch moment that changed everything</h4>
+                <p>Open with the peak moment to immediately grab attention. Flash of the pentakill, reversed into the buildup.</p>
+              </div>
+            </div>
+            <div class="story-segment">
+              <div class="segment-time">
+                <span class="segment-label rising">Rising</span>
+                <span class="time-range">0:05 - 0:15</span>
+              </div>
+              <div class="segment-body">
+                <h4>Building tension through consecutive plays</h4>
+                <p>Sequence of rapid kills with escalating intensity. Audio builds, cuts tighten. The audience feels it coming.</p>
+              </div>
+            </div>
+            <div class="story-segment">
+              <div class="segment-time">
+                <span class="segment-label climax">Climax</span>
+                <span class="time-range">0:15 - 0:25</span>
+              </div>
+              <div class="segment-body">
+                <h4>The pentakill heard around the world</h4>
+                <p>Full uncut pentakill sequence. No edits, no cuts -- pure raw gameplay at its peak. Let the moment breathe.</p>
+              </div>
+            </div>
+            <div class="story-segment">
+              <div class="segment-time">
+                <span class="segment-label outro">Outro</span>
+                <span class="time-range">0:25 - 0:30</span>
+              </div>
+              <div class="segment-body">
+                <h4>Subscribe for more epic moments</h4>
+                <p>Celebration clip with branded end card overlay. Follow CTA and preview of next highlight.</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -588,6 +1036,218 @@ footer{
   </div>
 </section>
 
+<!-- ══ Template Gallery ══ -->
+<section class="template-gallery" id="templates">
+  <div class="container">
+    <div class="reveal">
+      <p class="section-label">Template Gallery</p>
+      <h2 class="section-title">Choose your <span class="gradient-text">clip style</span></h2>
+      <p class="section-desc">Six curated templates built for different content goals. Select one to see the output structure.</p>
+    </div>
+    <div class="templates-grid" id="templates-grid">
+      <!-- Hype Montage -->
+      <div class="template-card reveal reveal-delay-1" data-template="hype">
+        <div class="template-preview">
+          <div class="template-preview-bars">
+            <div class="bar" style="height:20px"></div><div class="bar" style="height:35px"></div>
+            <div class="bar" style="height:50px"></div><div class="bar" style="height:30px"></div>
+            <div class="bar" style="height:55px"></div><div class="bar" style="height:60px"></div>
+            <div class="bar" style="height:40px"></div><div class="bar" style="height:45px"></div>
+            <div class="bar" style="height:58px"></div><div class="bar" style="height:35px"></div>
+          </div>
+        </div>
+        <h3>Hype Montage</h3>
+        <p class="template-desc">Fast cuts, peak energy. Every second hits. Built for maximum audience retention and shareability.</p>
+        <div class="template-meta">
+          <span class="template-tag">15-30s</span>
+          <span class="template-tag">High Energy</span>
+          <span class="template-tag">TikTok / Shorts</span>
+        </div>
+      </div>
+      <!-- Chill Vibes -->
+      <div class="template-card reveal reveal-delay-2" data-template="chill">
+        <div class="template-preview">
+          <div class="template-preview-bars">
+            <div class="bar" style="height:25px"></div><div class="bar" style="height:28px"></div>
+            <div class="bar" style="height:30px"></div><div class="bar" style="height:27px"></div>
+            <div class="bar" style="height:32px"></div><div class="bar" style="height:29px"></div>
+            <div class="bar" style="height:31px"></div><div class="bar" style="height:26px"></div>
+            <div class="bar" style="height:28px"></div><div class="bar" style="height:24px"></div>
+          </div>
+        </div>
+        <h3>Chill Vibes</h3>
+        <p class="template-desc">Smooth transitions, ambient pacing. Let the gameplay breathe with a relaxed, aesthetic flow.</p>
+        <div class="template-meta">
+          <span class="template-tag">30-60s</span>
+          <span class="template-tag">Relaxed</span>
+          <span class="template-tag">Reels / YouTube</span>
+        </div>
+      </div>
+      <!-- Tutorial Cut -->
+      <div class="template-card reveal reveal-delay-3" data-template="tutorial">
+        <div class="template-preview">
+          <div class="template-preview-bars">
+            <div class="bar" style="height:40px"></div><div class="bar" style="height:20px"></div>
+            <div class="bar" style="height:40px"></div><div class="bar" style="height:20px"></div>
+            <div class="bar" style="height:40px"></div><div class="bar" style="height:20px"></div>
+            <div class="bar" style="height:40px"></div><div class="bar" style="height:20px"></div>
+            <div class="bar" style="height:40px"></div><div class="bar" style="height:20px"></div>
+          </div>
+        </div>
+        <h3>Tutorial Cut</h3>
+        <p class="template-desc">Step-by-step structure with pauses for explanation. Optimized for educational gaming content.</p>
+        <div class="template-meta">
+          <span class="template-tag">45-90s</span>
+          <span class="template-tag">Instructional</span>
+          <span class="template-tag">YouTube</span>
+        </div>
+      </div>
+      <!-- Clutch Compilation -->
+      <div class="template-card reveal reveal-delay-1" data-template="clutch">
+        <div class="template-preview">
+          <div class="template-preview-bars">
+            <div class="bar" style="height:15px"></div><div class="bar" style="height:18px"></div>
+            <div class="bar" style="height:20px"></div><div class="bar" style="height:55px"></div>
+            <div class="bar" style="height:15px"></div><div class="bar" style="height:22px"></div>
+            <div class="bar" style="height:18px"></div><div class="bar" style="height:58px"></div>
+            <div class="bar" style="height:12px"></div><div class="bar" style="height:50px"></div>
+          </div>
+        </div>
+        <h3>Clutch Compilation</h3>
+        <p class="template-desc">Tension-release pattern. Low moments before explosive peaks. The audience holds their breath.</p>
+        <div class="template-meta">
+          <span class="template-tag">30-60s</span>
+          <span class="template-tag">Dramatic</span>
+          <span class="template-tag">All Platforms</span>
+        </div>
+      </div>
+      <!-- Story Arc -->
+      <div class="template-card reveal reveal-delay-2" data-template="story">
+        <div class="template-preview">
+          <div class="template-preview-bars">
+            <div class="bar" style="height:20px"></div><div class="bar" style="height:28px"></div>
+            <div class="bar" style="height:35px"></div><div class="bar" style="height:42px"></div>
+            <div class="bar" style="height:50px"></div><div class="bar" style="height:58px"></div>
+            <div class="bar" style="height:55px"></div><div class="bar" style="height:40px"></div>
+            <div class="bar" style="height:30px"></div><div class="bar" style="height:22px"></div>
+          </div>
+        </div>
+        <h3>Story Arc</h3>
+        <p class="template-desc">Full narrative structure: setup, rising action, climax, resolution. Cinematic pacing for engaged viewers.</p>
+        <div class="template-meta">
+          <span class="template-tag">60-120s</span>
+          <span class="template-tag">Narrative</span>
+          <span class="template-tag">YouTube / Reels</span>
+        </div>
+      </div>
+      <!-- Raw Highlights -->
+      <div class="template-card reveal reveal-delay-3" data-template="raw">
+        <div class="template-preview">
+          <div class="template-preview-bars">
+            <div class="bar" style="height:50px"></div><div class="bar" style="height:48px"></div>
+            <div class="bar" style="height:52px"></div><div class="bar" style="height:50px"></div>
+            <div class="bar" style="height:55px"></div><div class="bar" style="height:50px"></div>
+            <div class="bar" style="height:48px"></div><div class="bar" style="height:53px"></div>
+            <div class="bar" style="height:50px"></div><div class="bar" style="height:47px"></div>
+          </div>
+        </div>
+        <h3>Raw Highlights</h3>
+        <p class="template-desc">Pure gameplay, minimal edits. Back-to-back top moments with clean cuts. No frills, all skill.</p>
+        <div class="template-meta">
+          <span class="template-tag">30-90s</span>
+          <span class="template-tag">Pure</span>
+          <span class="template-tag">Any Platform</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Template output preview -->
+    <div class="template-output" id="template-output">
+      <div class="template-output-title" id="template-output-title"></div>
+      <div class="output-structure" id="template-output-structure"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ Persona Preview ══ -->
+<section class="persona-preview" id="personas">
+  <div class="container">
+    <div class="reveal">
+      <p class="section-label">Persona Matching</p>
+      <h2 class="section-title">Clips that match <span class="gradient-text">your brand</span></h2>
+      <p class="section-desc">KAIRO adapts to your personality. Here is how different streamer personas produce different results from the same footage.</p>
+    </div>
+    <div class="personas-grid">
+      <!-- Hype Caster -->
+      <div class="persona-card persona-hype reveal reveal-delay-1">
+        <div class="persona-avatar">HC</div>
+        <h3>The Hype Caster</h3>
+        <p class="persona-style">Explosive energy, rapid commentary, crowd-pleasing reactions. Every kill is a headline moment.</p>
+        <div class="persona-detail">
+          <div class="persona-detail-row">
+            <span class="persona-detail-label">Preferred Template:</span>
+            <span class="persona-detail-value">Hype Montage</span>
+          </div>
+          <div class="persona-detail-row">
+            <span class="persona-detail-label">Clip Pacing:</span>
+            <span class="persona-detail-value">Fast (2-3s per cut)</span>
+          </div>
+        </div>
+        <div class="persona-tags">
+          <span class="persona-tag">FPS</span>
+          <span class="persona-tag">Battle Royale</span>
+          <span class="persona-tag">Competitive</span>
+          <span class="persona-tag">High Energy</span>
+        </div>
+      </div>
+      <!-- Chill Analyst -->
+      <div class="persona-card persona-chill reveal reveal-delay-2">
+        <div class="persona-avatar">CA</div>
+        <h3>The Chill Analyst</h3>
+        <p class="persona-style">Calm breakdowns, strategic insights, thoughtful narration. Wins through brains, not volume.</p>
+        <div class="persona-detail">
+          <div class="persona-detail-row">
+            <span class="persona-detail-label">Preferred Template:</span>
+            <span class="persona-detail-value">Story Arc</span>
+          </div>
+          <div class="persona-detail-row">
+            <span class="persona-detail-label">Clip Pacing:</span>
+            <span class="persona-detail-value">Measured (5-8s per cut)</span>
+          </div>
+        </div>
+        <div class="persona-tags">
+          <span class="persona-tag">MOBA</span>
+          <span class="persona-tag">Strategy</span>
+          <span class="persona-tag">Educational</span>
+          <span class="persona-tag">Relaxed</span>
+        </div>
+      </div>
+      <!-- Silent Clutch -->
+      <div class="persona-card persona-silent reveal reveal-delay-3">
+        <div class="persona-avatar">SC</div>
+        <h3>The Silent Clutch</h3>
+        <p class="persona-style">No commentary needed. Pure mechanical skill speaks for itself. Let the gameplay do the talking.</p>
+        <div class="persona-detail">
+          <div class="persona-detail-row">
+            <span class="persona-detail-label">Preferred Template:</span>
+            <span class="persona-detail-value">Raw Highlights</span>
+          </div>
+          <div class="persona-detail-row">
+            <span class="persona-detail-label">Clip Pacing:</span>
+            <span class="persona-detail-value">Dynamic (gameplay-driven)</span>
+          </div>
+        </div>
+        <div class="persona-tags">
+          <span class="persona-tag">FPS</span>
+          <span class="persona-tag">Fighting</span>
+          <span class="persona-tag">Mechanical Skill</span>
+          <span class="persona-tag">Minimal Edits</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ══ For Streamers ══ -->
 <section class="streamers" id="streamers">
   <div class="container">
@@ -601,6 +1261,29 @@ footer{
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
         Get Early Access
       </a>
+    </div>
+  </div>
+</section>
+
+<!-- ══ Stats ══ -->
+<section class="stats-section" id="stats">
+  <div class="container">
+    <div class="stats-grid">
+      <div class="stat-card reveal reveal-delay-1">
+        <div class="stat-value"><span class="stat-counter" data-target="10">0</span><span class="stat-unit">x</span></div>
+        <div class="stat-label">Faster Than Manual Editing</div>
+        <div class="stat-sublabel">From hours to minutes, automatically</div>
+      </div>
+      <div class="stat-card reveal reveal-delay-2">
+        <div class="stat-value"><span class="stat-counter" data-target="5">0</span></div>
+        <div class="stat-label">Story Templates</div>
+        <div class="stat-sublabel">Curated for every content style</div>
+      </div>
+      <div class="stat-card reveal reveal-delay-3">
+        <div class="stat-value"><span class="stat-counter" data-target="50">0</span><span class="stat-unit">+</span></div>
+        <div class="stat-label">Game Titles Understood</div>
+        <div class="stat-sublabel">AI trained on real game context</div>
+      </div>
     </div>
   </div>
 </section>
@@ -662,7 +1345,7 @@ footer{
 <script>
 (function(){
   // ── Scroll reveal ──
-  const observer = new IntersectionObserver(function(entries){
+  var observer = new IntersectionObserver(function(entries){
     entries.forEach(function(entry){
       if(entry.isIntersecting){
         entry.target.classList.add('visible');
@@ -676,12 +1359,10 @@ footer{
 
   // ── Nav scroll state ──
   var nav = document.getElementById('nav');
-  var lastScroll = 0;
   window.addEventListener('scroll',function(){
     var st = window.pageYOffset || document.documentElement.scrollTop;
     if(st > 60){nav.classList.add('scrolled')}
     else{nav.classList.remove('scrolled')}
-    lastScroll = st;
   },{passive:true});
 
   // ── Timeline strip frames ──
@@ -708,6 +1389,282 @@ footer{
       }
     });
   });
+
+  // ═══════════════════════════════════════════
+  // ── INTERACTIVE DEMO ──
+  // ═══════════════════════════════════════════
+  var highlights = [
+    {time:'03:42',timeEnd:'03:47',type:'kill',label:'Triple Kill',desc:'Three rapid eliminations in 5 seconds during team fight',confidence:94,pos:7.8,width:1.2},
+    {time:'12:18',timeEnd:'12:24',type:'clutch',label:'1v3 Clutch',desc:'Survived 1v3 with 15 HP remaining, turned the fight',confidence:97,pos:25.8,width:1.5},
+    {time:'21:05',timeEnd:'21:08',type:'celebration',label:'Objective Secured',desc:'Baron steal followed by team celebration and emotes',confidence:88,pos:44.3,width:0.8},
+    {time:'28:33',timeEnd:'28:41',type:'streak',label:'Kill Streak',desc:'Five consecutive kills without dying — unstoppable spree',confidence:96,pos:60.0,width:2.0},
+    {time:'35:12',timeEnd:'35:22',type:'kill',label:'Pentakill',desc:'Full team wipe in teamfight. The defining moment of the match',confidence:99,pos:74.0,width:2.5},
+    {time:'41:50',timeEnd:'41:55',type:'celebration',label:'Victory',desc:'Nexus destroyed, victory screen with final stats overlay',confidence:91,pos:88.0,width:1.2}
+  ];
+
+  var uploadBtn = document.getElementById('demo-upload-btn');
+  var progressEl = document.getElementById('demo-progress');
+  var progressFill = document.getElementById('demo-progress-fill');
+  var progressStatus = document.getElementById('demo-progress-status');
+  var demoUpload = document.getElementById('demo-upload');
+  var demoResults = document.getElementById('demo-results');
+  var demoUploadZone = document.getElementById('demo-upload-zone');
+
+  var statusMessages = [
+    {pct:10,msg:'Extracting video frames...'},
+    {pct:25,msg:'Detecting game type: League of Legends'},
+    {pct:40,msg:'Analyzing gameplay events...'},
+    {pct:55,msg:'Mapping emotional intensity...'},
+    {pct:70,msg:'Identifying highlight moments...'},
+    {pct:85,msg:'Building narrative candidates...'},
+    {pct:95,msg:'Ranking highlights by impact...'},
+    {pct:100,msg:'Analysis complete.'}
+  ];
+
+  if(uploadBtn){
+    uploadBtn.addEventListener('click',function(){
+      uploadBtn.disabled = true;
+      demoUploadZone.style.borderColor = 'rgba(124,58,237,0.5)';
+      demoUploadZone.querySelector('.upload-label').textContent = 'gameplay_session_2026-02-17.mp4';
+      demoUploadZone.querySelector('.upload-hint').textContent = '1.2 GB -- MP4 -- 47:32';
+      progressEl.classList.add('active');
+
+      var step = 0;
+      var interval = setInterval(function(){
+        if(step >= statusMessages.length){
+          clearInterval(interval);
+          setTimeout(function(){showResults()},400);
+          return;
+        }
+        progressFill.style.width = statusMessages[step].pct + '%';
+        progressStatus.textContent = statusMessages[step].msg;
+        step++;
+      },600);
+    });
+  }
+
+  function showResults(){
+    demoUpload.style.display = 'none';
+    demoResults.classList.add('active');
+    renderTimeline();
+    renderHighlightCards();
+  }
+
+  function renderTimeline(){
+    var container = document.getElementById('demo-timeline-markers');
+    if(!container) return;
+    highlights.forEach(function(h,i){
+      var el = document.createElement('div');
+      el.className = 'timeline-marker type-' + h.type;
+      el.style.left = h.pos + '%';
+      el.style.width = h.width + '%';
+      el.setAttribute('data-index',i);
+      el.title = h.label + ' (' + h.time + ')';
+      container.appendChild(el);
+    });
+  }
+
+  function renderHighlightCards(){
+    var container = document.getElementById('highlight-cards');
+    if(!container) return;
+    highlights.forEach(function(h,i){
+      var card = document.createElement('div');
+      card.className = 'highlight-card';
+      card.setAttribute('data-index',i);
+      card.innerHTML =
+        '<div class="highlight-card-top">' +
+          '<span class="highlight-type type-' + h.type + '">' + h.type.charAt(0).toUpperCase() + h.type.slice(1) + '</span>' +
+          '<button class="highlight-toggle on" data-index="' + i + '" aria-label="Toggle inclusion"></button>' +
+        '</div>' +
+        '<div class="highlight-timestamp">' + h.time + ' - ' + h.timeEnd + '</div>' +
+        '<div class="highlight-description">' + h.desc + '</div>' +
+        '<div class="highlight-confidence">Confidence: <span>' + h.confidence + '%</span></div>';
+      container.appendChild(card);
+    });
+
+    // Toggle handlers
+    container.addEventListener('click',function(e){
+      var btn = e.target.closest('.highlight-toggle');
+      if(!btn) return;
+      btn.classList.toggle('on');
+      var idx = btn.getAttribute('data-index');
+      var markers = document.querySelectorAll('.timeline-marker[data-index="' + idx + '"]');
+      markers.forEach(function(m){m.classList.toggle('excluded')});
+    });
+  }
+
+  // Generate Story button
+  var generateBtn = document.getElementById('demo-generate-btn');
+  var storySpinner = document.getElementById('story-spinner');
+  var storyResult = document.getElementById('story-result');
+
+  if(generateBtn){
+    generateBtn.addEventListener('click',function(){
+      generateBtn.disabled = true;
+      generateBtn.style.display = 'none';
+      storySpinner.classList.add('active');
+
+      var spinnerMsgs = ['Building narrative arc...','Selecting key moments...','Optimizing pacing...','Finalizing story structure...'];
+      var spinnerText = storySpinner.querySelector('.spinner-text');
+      var msgIdx = 0;
+      var msgInterval = setInterval(function(){
+        msgIdx++;
+        if(msgIdx >= spinnerMsgs.length){
+          clearInterval(msgInterval);
+          return;
+        }
+        spinnerText.textContent = spinnerMsgs[msgIdx];
+      },700);
+
+      setTimeout(function(){
+        clearInterval(msgInterval);
+        storySpinner.classList.remove('active');
+        storyResult.classList.add('active');
+      },3000);
+    });
+  }
+
+  // ═══════════════════════════════════════════
+  // ── TEMPLATE GALLERY ──
+  // ═══════════════════════════════════════════
+  var templateData = {
+    hype:{
+      title:'Hype Montage -- Output Structure',
+      blocks:[
+        {time:'0:00 - 0:02',label:'Impact Open',pct:7},
+        {time:'0:02 - 0:06',label:'Kill Sequence 1',pct:13},
+        {time:'0:06 - 0:10',label:'Kill Sequence 2',pct:13},
+        {time:'0:10 - 0:14',label:'Peak Moment',pct:13},
+        {time:'0:14 - 0:15',label:'End Card',pct:3}
+      ]
+    },
+    chill:{
+      title:'Chill Vibes -- Output Structure',
+      blocks:[
+        {time:'0:00 - 0:08',label:'Ambient Open',pct:13},
+        {time:'0:08 - 0:20',label:'Smooth Play 1',pct:20},
+        {time:'0:20 - 0:35',label:'Scenic Moment',pct:25},
+        {time:'0:35 - 0:50',label:'Cool Play',pct:25},
+        {time:'0:50 - 0:60',label:'Fade Out',pct:17}
+      ]
+    },
+    tutorial:{
+      title:'Tutorial Cut -- Output Structure',
+      blocks:[
+        {time:'0:00 - 0:10',label:'Context Setup',pct:11},
+        {time:'0:10 - 0:25',label:'Step 1: Approach',pct:17},
+        {time:'0:25 - 0:45',label:'Step 2: Execution',pct:22},
+        {time:'0:45 - 0:70',label:'Step 3: Result',pct:28},
+        {time:'1:10 - 1:30',label:'Recap + CTA',pct:22}
+      ]
+    },
+    clutch:{
+      title:'Clutch Compilation -- Output Structure',
+      blocks:[
+        {time:'0:00 - 0:05',label:'Tension Build',pct:8},
+        {time:'0:05 - 0:15',label:'Clutch Moment 1',pct:17},
+        {time:'0:15 - 0:20',label:'Breath',pct:8},
+        {time:'0:20 - 0:35',label:'Clutch Moment 2',pct:25},
+        {time:'0:35 - 0:50',label:'Peak Clutch',pct:25},
+        {time:'0:50 - 0:60',label:'Victory',pct:17}
+      ]
+    },
+    story:{
+      title:'Story Arc -- Output Structure',
+      blocks:[
+        {time:'0:00 - 0:10',label:'Hook / Flash-forward',pct:8},
+        {time:'0:10 - 0:30',label:'Setup / Context',pct:17},
+        {time:'0:30 - 0:55',label:'Rising Action',pct:21},
+        {time:'0:55 - 1:20',label:'Climax',pct:21},
+        {time:'1:20 - 1:45',label:'Resolution',pct:21},
+        {time:'1:45 - 2:00',label:'Outro / CTA',pct:12}
+      ]
+    },
+    raw:{
+      title:'Raw Highlights -- Output Structure',
+      blocks:[
+        {time:'0:00 - 0:10',label:'Highlight 1',pct:14},
+        {time:'0:10 - 0:20',label:'Highlight 2',pct:14},
+        {time:'0:20 - 0:35',label:'Highlight 3',pct:22},
+        {time:'0:35 - 0:50',label:'Highlight 4',pct:22},
+        {time:'0:50 - 0:60',label:'Highlight 5',pct:14},
+        {time:'0:60 - 1:10',label:'Best Of',pct:14}
+      ]
+    }
+  };
+
+  var templatesGrid = document.getElementById('templates-grid');
+  var templateOutput = document.getElementById('template-output');
+  var templateOutputTitle = document.getElementById('template-output-title');
+  var templateOutputStructure = document.getElementById('template-output-structure');
+
+  if(templatesGrid){
+    templatesGrid.addEventListener('click',function(e){
+      var card = e.target.closest('.template-card');
+      if(!card) return;
+      var key = card.getAttribute('data-template');
+      var data = templateData[key];
+      if(!data) return;
+
+      // Deselect all
+      templatesGrid.querySelectorAll('.template-card').forEach(function(c){c.classList.remove('selected')});
+      card.classList.add('selected');
+
+      // Show output
+      templateOutputTitle.textContent = data.title;
+      templateOutputStructure.innerHTML = '';
+      data.blocks.forEach(function(b){
+        var block = document.createElement('div');
+        block.className = 'output-block';
+        block.innerHTML =
+          '<span class="output-block-time">' + b.time + '</span>' +
+          '<div class="output-block-bar"></div>' +
+          '<span class="output-block-label">' + b.label + '</span>';
+        templateOutputStructure.appendChild(block);
+      });
+      templateOutput.classList.add('active');
+      templateOutput.scrollIntoView({behavior:'smooth',block:'nearest'});
+    });
+  }
+
+  // ═══════════════════════════════════════════
+  // ── STATS COUNTER ANIMATION ──
+  // ═══════════════════════════════════════════
+  var countersAnimated = false;
+  var statsObserver = new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      if(entry.isIntersecting && !countersAnimated){
+        countersAnimated = true;
+        animateCounters();
+      }
+    });
+  },{threshold:0.3});
+
+  var statsSection = document.getElementById('stats');
+  if(statsSection){statsObserver.observe(statsSection)}
+
+  function animateCounters(){
+    var counters = document.querySelectorAll('.stat-counter');
+    counters.forEach(function(counter){
+      var target = parseInt(counter.getAttribute('data-target'),10);
+      var duration = 1800;
+      var startTime = null;
+
+      function step(timestamp){
+        if(!startTime) startTime = timestamp;
+        var progress = Math.min((timestamp - startTime) / duration, 1);
+        // Ease out cubic
+        var eased = 1 - Math.pow(1 - progress, 3);
+        counter.textContent = Math.floor(eased * target);
+        if(progress < 1){
+          requestAnimationFrame(step);
+        } else {
+          counter.textContent = target;
+        }
+      }
+      requestAnimationFrame(step);
+    });
+  }
 })();
 </script>
 </body>
