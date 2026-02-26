@@ -15,8 +15,8 @@
       <span class="titlebar-badge">AI</span>
     </div>
     <div class="titlebar-status">
-      <span class="status-dot online"></span>
-      <span class="status-text">Ready</span>
+      <span class="status-dot connecting" id="server-dot"></span>
+      <span class="status-text" id="server-status-text">Connecting to backend...</span>
     </div>
   </div>
 
@@ -124,6 +124,18 @@
           </button>
         </div>
       </header>
+
+      <!-- ─── URL Input Bar ─── -->
+      <div class="url-input-bar" id="url-input-bar">
+        <div class="url-input-wrapper">
+          <svg class="url-input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+          <input type="text" class="url-input" id="url-input" placeholder="Paste a Twitch/YouTube VOD URL or drop a file..." autocomplete="off" spellcheck="false">
+          <button class="btn btn-auto-edit" id="btn-auto-edit" title="One-click: download, analyze, and generate clips">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Auto Edit
+          </button>
+        </div>
+      </div>
 
       <!-- ─── Video Preview + Upload ─── -->
       <div class="video-section">
@@ -537,6 +549,83 @@
       <button class="btn btn-primary btn-sm" id="btn-export">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Export Clip
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══════ PIPELINE PROGRESS OVERLAY ═══════ -->
+  <div class="pipeline-overlay hidden" id="pipeline-overlay">
+    <div class="pipeline-modal">
+      <div class="pipeline-header">
+        <div class="pipeline-icon-anim">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        </div>
+        <h2>Auto Edit Pipeline</h2>
+        <p class="pipeline-subtitle" id="pipeline-message">Initializing...</p>
+      </div>
+      <div class="pipeline-stages">
+        <div class="pipeline-stage" id="stage-ingest">
+          <div class="stage-indicator">
+            <div class="stage-dot"></div>
+            <div class="stage-line"></div>
+          </div>
+          <div class="stage-info">
+            <span class="stage-name">Download & Ingest</span>
+            <span class="stage-desc">Fetching video, extracting audio & frames</span>
+          </div>
+        </div>
+        <div class="pipeline-stage" id="stage-analyze">
+          <div class="stage-indicator">
+            <div class="stage-dot"></div>
+            <div class="stage-line"></div>
+          </div>
+          <div class="stage-info">
+            <span class="stage-name">AI Analysis</span>
+            <span class="stage-desc">Detecting highlights, kills, emotions</span>
+          </div>
+        </div>
+        <div class="pipeline-stage" id="stage-generate">
+          <div class="stage-indicator">
+            <div class="stage-dot"></div>
+            <div class="stage-line"></div>
+          </div>
+          <div class="stage-info">
+            <span class="stage-name">Generate Scripts</span>
+            <span class="stage-desc">Building edit scripts for clip candidates</span>
+          </div>
+        </div>
+        <div class="pipeline-stage" id="stage-complete">
+          <div class="stage-indicator">
+            <div class="stage-dot"></div>
+          </div>
+          <div class="stage-info">
+            <span class="stage-name">Complete</span>
+            <span class="stage-desc">Clips ready for review</span>
+          </div>
+        </div>
+      </div>
+      <div class="pipeline-progress-bar">
+        <div class="pipeline-progress-fill" id="pipeline-progress-fill" style="width: 0%;"></div>
+      </div>
+      <button class="btn btn-secondary btn-sm pipeline-cancel-btn" id="btn-pipeline-cancel">Cancel</button>
+    </div>
+  </div>
+
+  <!-- ═══════ RESULTS PANEL (clip candidates) ═══════ -->
+  <div class="results-panel hidden" id="results-panel">
+    <div class="results-header">
+      <h3>Clip Candidates</h3>
+      <p class="results-subtitle">Review, approve, or reject each generated clip</p>
+      <button class="results-close-btn" id="btn-close-results" title="Close">&times;</button>
+    </div>
+    <div class="results-grid" id="results-grid">
+      <!-- Populated dynamically by JS -->
+    </div>
+    <div class="results-actions">
+      <button class="btn btn-secondary btn-sm" id="btn-results-dismiss">Dismiss</button>
+      <button class="btn btn-primary btn-sm" id="btn-export-approved">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export Approved
       </button>
     </div>
   </div>
