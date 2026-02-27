@@ -1614,3 +1614,65 @@ input { font-family: inherit; }
   background: rgba(139, 92, 246, 0.3);
   color: white;
 }
+
+/* ===== CTA BUTTON SHIMMER ===== */
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.hero-go-btn {
+  background: linear-gradient(90deg, #8b5cf6 0%, #ec4899 30%, #8b5cf6 60%, #ec4899 100%);
+  background-size: 200% 100%;
+  animation: shimmer 4s ease-in-out infinite;
+}
+.hero-go-btn:hover {
+  animation-play-state: paused;
+}
+
+/* ===== TEMPLATE SELECTED GLOW ===== */
+.template-card.selected::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  right: -1px;
+  bottom: -1px;
+  border-radius: var(--radius-lg);
+  background: var(--accent-gradient);
+  opacity: 0.15;
+  z-index: 0;
+  animation: selectedPulse 2s ease-in-out infinite;
+}
+
+@keyframes selectedPulse {
+  0%, 100% { opacity: 0.1; }
+  50% { opacity: 0.2; }
+}
+
+/* ===== SMOOTH PAGE TRANSITIONS ===== */
+.section {
+  animation: sectionFadeIn 0.4s ease-out;
+}
+
+@keyframes sectionFadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== IMPROVED PROGRESS LOG ===== */
+.log-entry:last-child {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.log-entry:last-child .log-text {
+  color: var(--text-accent);
+}
+
+/* ===== RESPONSIVE IMPROVEMENTS ===== */
+@media (max-width: 768px) {
+  .hero-go-btn svg {
+    display: none;
+  }
+}
