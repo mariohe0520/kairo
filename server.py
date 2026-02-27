@@ -35,7 +35,8 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 # ---------------------------------------------------------------------------
 # Project imports
@@ -1088,6 +1089,27 @@ async def websocket_progress(websocket: WebSocket):
     finally:
         _ws_connections.discard(websocket)
         logger.info("WebSocket client disconnected (total: %d)", len(_ws_connections))
+
+
+# ---------------------------------------------------------------------------
+# Web UI — serve static files from /web directory
+# ---------------------------------------------------------------------------
+
+WEB_DIR = WORKSPACE / "web"
+
+if WEB_DIR.is_dir():
+    @app.get("/")
+    async def serve_index():
+        """Serve the web UI index page."""
+        index_path = WEB_DIR / "index.html"
+        if index_path.is_file():
+            return HTMLResponse(content=index_path.read_text(encoding="utf-8"))
+        return HTMLResponse(content="<h1>Kairo</h1><p>Web UI not found.</p>", status_code=404)
+
+    # Mount static files (CSS, JS, images) — must come after all API routes
+    app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web-static")
+
+    logger.info("Web UI mounted from %s", WEB_DIR)
 
 
 # ---------------------------------------------------------------------------
