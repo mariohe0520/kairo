@@ -1,8 +1,15 @@
 __pycache__/
 *.pyc
+*.pyo
 node_modules/
 output/
 memory/profiles/
 templates/meta_*.json
 *.log
 .DS_Store
+.env
+*.egg-info/
+dist/
+build/
+.venv/
+venv/

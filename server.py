@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 import time
 import uuid
@@ -720,6 +721,193 @@ async def download_rendered_video(job_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Generic download — works for any completed job with an output video
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/jobs/{job_id}/download")
+async def download_job_output(job_id: str):
+    """Download the output video from any completed job (pipeline or render)."""
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+    if job.status != JobStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail=f"Job not yet completed (status: {job.status.value})")
+
+    result = job.result or {}
+    # Try various result keys for the output path
+    output_path = (
+        result.get("output_video")
+        or result.get("output_path")
+        or result.get("video_path")
+    )
+
+    if not output_path or not os.path.isfile(output_path):
+        raise HTTPException(status_code=404, detail="Output file not found")
+
+    return FileResponse(
+        output_path,
+        media_type="video/mp4",
+        filename=os.path.basename(output_path),
+    )
+
+
+# ---------------------------------------------------------------------------
+# LLM-based highlight detection endpoint
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/highlights")
+async def detect_highlights(
+    transcript_json: str = Form(...),
+    template_id: Optional[str] = Form(None),
+    max_highlights: int = Form(5),
+):
+    """
+    Use an LLM (Claude or OpenAI) to detect the best viral moments from
+    a Whisper transcript. This is the AI-powered highlight detection that
+    competitors like Opus Clip use.
+
+    Sends the transcript to an LLM and asks it to identify the most
+    engaging, emotional, or dramatic moments for short-form video clips.
+
+    Returns a list of highlight segments with timestamps and reasoning.
+    """
+    try:
+        segments = json.loads(transcript_json)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid transcript JSON: {e}")
+
+    if not segments:
+        return {"highlights": [], "message": "No transcript segments provided"}
+
+    # Build a condensed transcript for the LLM
+    transcript_text = ""
+    for seg in segments[:500]:  # Cap to avoid token limits
+        start = seg.get("start", 0)
+        end = seg.get("end", 0)
+        text = seg.get("text", "").strip()
+        if text:
+            transcript_text += f"[{start:.1f}s - {end:.1f}s] {text}\n"
+
+    if not transcript_text.strip():
+        return {"highlights": [], "message": "Transcript is empty"}
+
+    template_context = ""
+    if template_id and template_id in TEMPLATES:
+        tmpl = TEMPLATES[template_id]
+        template_context = (
+            f"\nTarget template: {tmpl['name']} - {tmpl['description']}\n"
+            f"Target mood: {tmpl['mood']}, Duration: {tmpl['durationRange'][0]}-{tmpl['durationRange'][1]}s\n"
+        )
+
+    system_prompt = (
+        "You are an expert viral video editor. Analyze this gaming/streaming "
+        "transcript and identify the best moments for short-form clips "
+        "(TikTok, YouTube Shorts, Reels).\n\n"
+        "For each highlight, identify:\n"
+        "1. Start and end timestamps (in seconds)\n"
+        "2. Why this moment is engaging (emotion, action, humor, surprise)\n"
+        "3. A suggested hook/title\n"
+        "4. Virality score (1-10)\n\n"
+        f"Find up to {max_highlights} highlights.{template_context}\n\n"
+        "Return JSON array with format:\n"
+        '[{"start": 0.0, "end": 30.0, "reason": "...", "hook": "...", "virality": 8}]'
+    )
+
+    highlights = []
+
+    # Try Claude first, then OpenAI, then fall back to heuristic
+    llm_used = "none"
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    openai_key = os.environ.get("OPENAI_API_KEY")
+
+    if anthropic_key:
+        try:
+            import anthropic
+            client = anthropic.Anthropic(api_key=anthropic_key)
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=2000,
+                system=system_prompt,
+                messages=[{"role": "user", "content": f"Transcript:\n{transcript_text}"}],
+            )
+            raw = response.content[0].text
+            # Extract JSON from response
+            import re
+            json_match = re.search(r'\[.*\]', raw, re.DOTALL)
+            if json_match:
+                highlights = json.loads(json_match.group())
+                llm_used = "claude"
+        except Exception as e:
+            logger.warning("Claude highlight detection failed: %s", e)
+
+    if not highlights and openai_key:
+        try:
+            import openai
+            client = openai.OpenAI(api_key=openai_key)
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Transcript:\n{transcript_text}"},
+                ],
+                max_tokens=2000,
+                response_format={"type": "json_object"},
+            )
+            raw = response.choices[0].message.content
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                highlights = parsed
+            elif isinstance(parsed, dict) and "highlights" in parsed:
+                highlights = parsed["highlights"]
+            llm_used = "openai"
+        except Exception as e:
+            logger.warning("OpenAI highlight detection failed: %s", e)
+
+    if not highlights:
+        # Heuristic fallback: find segments with high energy words
+        highlights = _heuristic_highlights(segments, max_highlights)
+        llm_used = "heuristic"
+
+    return {
+        "highlights": highlights[:max_highlights],
+        "llm_used": llm_used,
+        "total_segments": len(segments),
+    }
+
+
+def _heuristic_highlights(segments: list, max_highlights: int) -> list:
+    """Fallback: detect highlights based on speech energy keywords."""
+    energy_words = {
+        "oh", "omg", "no", "yes", "let's go", "clutch", "insane",
+        "what", "kill", "headshot", "ace", "win", "lose", "gg",
+        "holy", "dude", "bro", "sick", "crazy", "nice", "nooo",
+        "come on", "how", "why", "haha", "lol", "rage", "tilt",
+    }
+    scored = []
+    for seg in segments:
+        text = (seg.get("text", "") or "").lower()
+        words = text.split()
+        energy = sum(1 for w in words if any(ew in w for ew in energy_words))
+        word_count = max(len(words), 1)
+        # More words in short time = more energy
+        duration = max(seg.get("end", 0) - seg.get("start", 0), 0.1)
+        density = word_count / duration
+        score = energy * 2 + density * 0.5
+        if score > 0:
+            scored.append({
+                "start": seg.get("start", 0),
+                "end": min(seg.get("end", 0) + 15, seg.get("start", 0) + 30),
+                "reason": f"High energy speech detected ({energy} trigger words)",
+                "hook": text[:60].strip() + "..." if len(text) > 60 else text.strip(),
+                "virality": min(10, int(score * 2)),
+            })
+    scored.sort(key=lambda x: x["virality"], reverse=True)
+    return scored[:max_highlights]
+
+
+# ---------------------------------------------------------------------------
 # Feedback endpoint
 # ---------------------------------------------------------------------------
 
@@ -913,22 +1101,36 @@ async def run_full_pipeline(
     background_tasks: BackgroundTasks,
     url: Optional[str] = Form(None),
     file_path: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
     streamer_id: Optional[str] = Form(None),
+    template_id: Optional[str] = Form(None),
     language: Optional[str] = Form(None),
 ):
     """
     One-click autonomous pipeline: URL/file → viral short video.
 
-    This is the crown jewel of Kairo. Takes a single input (URL or file path),
-    runs the full intelligent pipeline (ingest → caption → DVD → DNA → render),
-    evaluates quality, self-corrects, and returns the best clip.
+    This is the crown jewel of Kairo. Takes a single input (URL, file path,
+    or file upload), runs the full intelligent pipeline
+    (ingest → caption → DVD → DNA → render), evaluates quality,
+    self-corrects, and returns the best clip.
 
     The pipeline generates top-3 clip candidates, scores them, and selects
     the highest quality one. It also records the result for future learning.
     """
     source = url or file_path
+
+    # Handle file upload
+    if not source and file:
+        upload_dir = WORKSPACE / "output" / "uploads"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        dest = upload_dir / f"upload_{uuid.uuid4().hex[:8]}_{file.filename}"
+        with open(dest, "wb") as f_out:
+            content = await file.read()
+            f_out.write(content)
+        source = str(dest)
+
     if not source:
-        raise HTTPException(status_code=400, detail="Provide 'url' or 'file_path'")
+        raise HTTPException(status_code=400, detail="Provide 'url', 'file_path', or upload a 'file'")
 
     job_id = str(uuid.uuid4())[:12]
     job = Job(job_id=job_id, job_type="pipeline")
@@ -960,6 +1162,7 @@ async def run_full_pipeline(
             job.completed_at = datetime.now(timezone.utc).isoformat()
             job.result = {
                 "output_video": result.output_video,
+                "output_path": result.output_video,  # alias for generic download
                 "quality_score": result.quality_score,
                 "report": result.report,
                 "candidates": [
@@ -968,15 +1171,16 @@ async def run_full_pipeline(
                         "quality_score": c.quality_report.overall_score
                         if hasattr(c, "quality_report") and c.quality_report
                         else 0,
-                        "output_path": c.output_path
-                        if hasattr(c, "output_path")
+                        "output_path": c.output_video
+                        if hasattr(c, "output_video")
                         else None,
                     }
                     for i, c in enumerate(
                         result.candidates if hasattr(result, "candidates") else []
                     )
                 ],
-                "timing": result.timing if hasattr(result, "timing") else {},
+                "total_time_sec": result.total_time_sec
+                if hasattr(result, "total_time_sec") else 0,
             }
             _sync_broadcast(job_id, "complete", 1.0, "Pipeline complete")
 

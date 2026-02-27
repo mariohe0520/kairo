@@ -1,5 +1,26 @@
+# Kairo AI Clip Editor - Python Dependencies
+# Install: pip install -r requirements.txt
+
+# --- Web Framework ---
 fastapi>=0.115.0
-uvicorn>=0.32.0
+uvicorn[standard]>=0.32.0
 python-multipart>=0.0.12
 websockets>=13.0
+
+# --- Data & Computation ---
 numpy>=1.26.0
+
+# --- Video Processing (system-level, not pip) ---
+# ffmpeg: brew install ffmpeg
+# yt-dlp: brew install yt-dlp  OR  pip install yt-dlp
+# whisper: pip install openai-whisper
+
+# --- Optional: LLM-based highlight detection ---
+# anthropic>=0.40.0   # For Claude API (highlight detection)
+# openai>=1.50.0      # For OpenAI API (highlight detection)
+
+# --- Optional: yt-dlp via pip (if not using brew) ---
+yt-dlp>=2024.0.0
+
+# --- Optional: Whisper ASR ---
+# openai-whisper>=20240930

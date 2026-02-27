@@ -420,13 +420,19 @@
     try {
       const formData = new FormData();
       if (state.uploadedFile) {
-        formData.append('file_path', state.uploadedFile.name);
+        // Upload the actual file to the ingest endpoint first,
+        // then run pipeline with the resulting path.
+        // For simplicity, use /api/pipeline which also accepts file uploads.
+        formData.append('file', state.uploadedFile);
       } else {
         formData.append('url', url);
       }
 
       if (state.selectedPersona) {
         formData.append('streamer_id', state.selectedPersona);
+      }
+      if (state.selectedTemplate) {
+        formData.append('template_id', state.selectedTemplate);
       }
 
       const data = await api('/api/pipeline', {
@@ -457,9 +463,18 @@
         const data = await api(`/api/jobs/${jobId}`);
         if (!data) { clearInterval(interval); return; }
 
+        // Map the pipeline's internal stage names to our UI stages
+        let stage = data.job_type || 'pipeline';
+        const msg = (data.message || '').toLowerCase();
+        if (msg.includes('ingest') || msg.includes('download')) stage = 'ingest';
+        else if (msg.includes('caption') || msg.includes('analyz')) stage = 'analyze';
+        else if (msg.includes('discover') || msg.includes('architect') || msg.includes('generat') || msg.includes('script')) stage = 'generate';
+        else if (msg.includes('render')) stage = 'render';
+        else if (msg.includes('complete') || msg.includes('done')) stage = 'complete';
+
         handleProgressUpdate({
           job_id: jobId,
-          stage: data.job_type || 'pipeline',
+          stage: stage,
           progress: data.progress || 0,
           message: data.message || '',
         });
@@ -566,8 +581,8 @@
     const video = $('#result-video');
     const overlay = $('#player-overlay');
 
-    if (data && data.result && data.result.output_video) {
-      video.src = `${API_BASE}/api/render/${state.currentJobId}/download`;
+    if (data && data.result && (data.result.output_video || data.result.output_path)) {
+      video.src = `${API_BASE}/api/jobs/${state.currentJobId}/download`;
       overlay.classList.remove('hidden');
     } else {
       // Demo mode - no actual video
@@ -999,7 +1014,8 @@
 
     $('#btn-download').addEventListener('click', () => {
       if (state.serverOnline && state.currentJobId) {
-        window.open(`${API_BASE}/api/render/${state.currentJobId}/download`, '_blank');
+        // Try the generic job download endpoint first (works for pipeline + render jobs)
+        window.open(`${API_BASE}/api/jobs/${state.currentJobId}/download`, '_blank');
       } else {
         showToast(t('toast.demoMode'), 'info');
       }
@@ -1049,10 +1065,10 @@
   // ═══════════════════════════════════════════
 
   async function init() {
-    // Hide loading screen
+    // Hide loading screen (faster when server is local)
     setTimeout(() => {
       $('#loading-screen').classList.add('hide');
-    }, 1800);
+    }, 1200);
 
     // Apply initial language
     applyLanguage();
