@@ -264,9 +264,17 @@ class RenderEngine:
             # Only count text_overlay if drawtext is actually available
             needs_text = bool(beat.text_overlay) and self._drawtext_available
             if beat.effects or needs_text or beat.pacing != 1.0:
-                self._apply_effects(raw_path, beat, output_config, fx_path)
-                segment_paths.append(fx_path)
-                _safe_remove(raw_path)
+                try:
+                    self._apply_effects(raw_path, beat, output_config, fx_path)
+                    segment_paths.append(fx_path)
+                    _safe_remove(raw_path)
+                except Exception as fx_err:
+                    # Effects failed (e.g. unsupported FFmpeg filter) — use raw segment
+                    logger.warning(
+                        "Effects failed for beat %s (effects=%s): %s — using raw segment",
+                        beat.phase, beat.effects, fx_err,
+                    )
+                    segment_paths.append(raw_path)
             else:
                 segment_paths.append(raw_path)
 
@@ -368,10 +376,12 @@ class RenderEngine:
 
             elif etype == "flash":
                 flash_duration = params.get("duration", 0.15)
+                # Use p(X,Y) (current-plane pixel accessor) — compatible with FFmpeg 8+.
+                # lum(X,Y)/cb(X,Y)/cr(X,Y) were removed in FFmpeg 8.
                 video_filters.append(
-                    f"geq=lum='if(between(t,0,{flash_duration:.3f}),255,lum(X,Y))'"
-                    f":cb='if(between(t,0,{flash_duration:.3f}),128,cb(X,Y))'"
-                    f":cr='if(between(t,0,{flash_duration:.3f}),128,cr(X,Y))'"
+                    f"geq=lum='if(between(t,0,{flash_duration:.3f}),255,p(X,Y))'"
+                    f":cb='if(between(t,0,{flash_duration:.3f}),128,p(X,Y))'"
+                    f":cr='if(between(t,0,{flash_duration:.3f}),128,p(X,Y))'"
                 )
 
         # --- Text overlay (only if drawtext filter is available in this ffmpeg build) ---
