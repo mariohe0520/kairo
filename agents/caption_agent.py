@@ -164,18 +164,45 @@ _vlm_model = None
 _vlm_processor = None
 _VLM_AVAILABLE: Optional[bool] = None
 
+def _is_vlm_cached(model_id: str) -> bool:
+    """Check if the VLM model files already exist in HuggingFace cache (no download)."""
+    try:
+        import os
+        cache_dir = os.path.expanduser("~/.cache/huggingface/hub")
+        # HF cache uses 'models--org--name' format
+        model_cache_name = "models--" + model_id.replace("/", "--")
+        model_cache_path = os.path.join(cache_dir, model_cache_name)
+        if os.path.isdir(model_cache_path):
+            # Check if safetensors files exist (model actually downloaded)
+            for root, dirs, files in os.walk(model_cache_path):
+                for f in files:
+                    if f.endswith(".safetensors"):
+                        return True
+        return False
+    except Exception:
+        return False
+
+
 def _ensure_vlm_loaded(model_id: str = "mlx-community/Qwen2.5-VL-3B-Instruct-4bit") -> bool:
-    """Attempt to load MLX-VLM once.  Returns True if the model is ready."""
+    """Attempt to load MLX-VLM once.  Returns True if the model is ready.
+    IMPORTANT: Only loads if model is already cached locally — never downloads on-demand
+    as the model is ~3GB and would block the pipeline for hours."""
     global _mlx_vlm, _vlm_model, _vlm_processor, _VLM_AVAILABLE
 
     if _VLM_AVAILABLE is not None:
         return _VLM_AVAILABLE
 
+    # Skip download entirely if model not already cached
+    if not _is_vlm_cached(model_id):
+        logger.info("VLM model not cached locally — using fast heuristic analysis (no download)")
+        _VLM_AVAILABLE = False
+        return False
+
     try:
         import mlx_vlm                           # type: ignore[import-untyped]
         from mlx_vlm import load as vlm_load     # type: ignore[import-untyped]
         _mlx_vlm = mlx_vlm
-        logger.info("Loading VLM model: %s", model_id)
+        logger.info("Loading VLM model from local cache: %s", model_id)
         _vlm_model, _vlm_processor = vlm_load(model_id)
         _VLM_AVAILABLE = True
         logger.info("VLM loaded successfully")

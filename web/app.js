@@ -252,12 +252,16 @@
     const label = $('#status-label');
 
     try {
-      const data = await fetch(`${API_BASE}/api/health`, { signal: AbortSignal.timeout(3000) });
-      if (data && data.ok) {
-        state.serverOnline = true;
-        dot.className = 'status-dot connected';
-        label.textContent = t('status.connected');
-        return true;
+      const resp = await fetch(`${API_BASE}/api/health`, { signal: AbortSignal.timeout(3000) });
+      if (resp && resp.ok) {
+        // Parse the JSON body to verify it's a real Kairo server
+        const body = await resp.json();
+        if (body && body.status === 'ok') {
+          state.serverOnline = true;
+          dot.className = 'status-dot connected';
+          label.textContent = t('status.connected');
+          return true;
+        }
       }
     } catch (e) {
       // Server not reachable
@@ -273,15 +277,19 @@
   // WebSocket
   // ═══════════════════════════════════════════
 
+  let _wsReconnectDelay = 1000;
+  const _WS_MAX_RECONNECT_DELAY = 30000;
+
   function connectWebSocket() {
     if (!state.serverOnline || IS_DEMO) return;
-    if (state.ws && state.ws.readyState <= 1) return;
+    if (state.ws && (state.ws.readyState === WebSocket.CONNECTING || state.ws.readyState === WebSocket.OPEN)) return;
 
     try {
       state.ws = new WebSocket(`${WS_BASE}/ws/progress`);
 
       state.ws.onopen = () => {
         console.log('[WS] Connected');
+        _wsReconnectDelay = 1000; // Reset backoff on successful connection
       };
 
       state.ws.onmessage = (evt) => {
@@ -296,15 +304,24 @@
       };
 
       state.ws.onclose = () => {
-        console.log('[WS] Disconnected');
-        setTimeout(connectWebSocket, 5000);
+        console.log('[WS] Disconnected, reconnecting in', _wsReconnectDelay, 'ms');
+        state.ws = null;
+        // Only reconnect if server is still believed to be online
+        if (state.serverOnline) {
+          setTimeout(connectWebSocket, _wsReconnectDelay);
+          _wsReconnectDelay = Math.min(_wsReconnectDelay * 1.5, _WS_MAX_RECONNECT_DELAY);
+        }
       };
 
       state.ws.onerror = () => {
-        state.ws.close();
+        // onclose will fire after onerror, so just let it handle reconnection
+        if (state.ws) {
+          state.ws.close();
+        }
       };
     } catch (e) {
       console.error('[WS] Connection failed:', e);
+      state.ws = null;
     }
   }
 
@@ -340,7 +357,7 @@
     addLogEntry(message);
 
     // Check for completion
-    if (data.stage === 'complete' || progress >= 1) {
+    if (data.stage === 'complete' || (data.stage !== 'error' && progress >= 1)) {
       onPipelineComplete(data);
     } else if (data.stage === 'error') {
       onPipelineFailed(message);
@@ -457,11 +474,21 @@
     }
   }
 
+  let _pollingInterval = null;
+
   function startPolling(jobId) {
-    const interval = setInterval(async () => {
+    // Clear any existing polling
+    if (_pollingInterval) {
+      clearInterval(_pollingInterval);
+      _pollingInterval = null;
+    }
+    _pollingInterval = setInterval(async () => {
+      const interval = _pollingInterval;
       try {
+        // Stop polling if job changed
+        if (state.currentJobId !== jobId) { clearInterval(interval); _pollingInterval = null; return; }
         const data = await api(`/api/jobs/${jobId}`);
-        if (!data) { clearInterval(interval); return; }
+        if (!data) { clearInterval(interval); _pollingInterval = null; return; }
 
         // Map the pipeline's internal stage names to our UI stages
         let stage = data.job_type || 'pipeline';
@@ -481,9 +508,11 @@
 
         if (data.status === 'completed') {
           clearInterval(interval);
+          _pollingInterval = null;
           onPipelineComplete(data);
         } else if (data.status === 'failed') {
           clearInterval(interval);
+          _pollingInterval = null;
           onPipelineFailed(data.error || 'Unknown error');
         }
       } catch (e) {
@@ -773,17 +802,16 @@
 
   function renderJobHistory(jobs) {
     const list = $('#history-list');
-    const empty = $('#history-empty');
 
     if (!jobs || jobs.length === 0) {
-      list.innerHTML = '';
-      list.appendChild(empty);
-      empty.classList.remove('hidden');
+      list.innerHTML = '<div class="history-empty" id="history-empty">' +
+        '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="2" y="3" width="20" height="18" rx="2"/><line x1="2" y1="8" x2="22" y2="8"/></svg>' +
+        '<p>' + t('history.empty') + '</p>' +
+        '</div>';
       return;
     }
 
     list.innerHTML = '';
-    empty.classList.add('hidden');
 
     const statusIcons = {
       completed: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
@@ -1000,6 +1028,10 @@
     // Cancel button
     $('#btn-cancel').addEventListener('click', () => {
       state.currentJobId = null;
+      if (_pollingInterval) {
+        clearInterval(_pollingInterval);
+        _pollingInterval = null;
+      }
       hideProgressSection();
       showToast('Pipeline cancelled', 'info');
     });

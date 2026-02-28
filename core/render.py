@@ -285,11 +285,12 @@ class RenderEngine:
         # Hardware acceleration (input side)
         cmd.extend(self._hwaccel_input_flags())
 
-        # Input seeking (fast)
+        # Input seeking — both -accurate_seek and -ss are INPUT options
+        # and MUST appear before -i, not after it
+        cmd.extend(["-accurate_seek"])
         cmd.extend(["-ss", f"{start:.6f}"])
         cmd.extend(["-i", video_path])
         cmd.extend(["-t", f"{duration:.6f}"])
-        cmd.extend(["-accurate_seek"])
 
         # Encoding
         cmd.extend(self._encoding_flags(codec, crf, audio_codec, output_config))

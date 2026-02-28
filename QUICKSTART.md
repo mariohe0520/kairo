@@ -3,7 +3,7 @@
 ## One-Click Launch
 
 ```bash
-cd /Users/mario/.openclaw/workspace/apps/kairo
+cd path/to/kairo
 ./start.sh
 ```
 
@@ -63,11 +63,19 @@ Without an API key, the system uses heuristic-based highlight detection
 | `/api/generate` | POST | Generate an edit script |
 | `/api/render` | POST | Render a video from edit script |
 | `/api/highlights` | POST | LLM-based highlight detection |
+| `/api/feedback` | POST | Submit feedback on a clip |
 | `/api/templates` | GET | List editing templates |
+| `/api/templates/{id}` | GET | Get a specific template |
 | `/api/personas` | GET | List streamer personas |
+| `/api/personas/{id}` | GET | Get a specific persona |
+| `/api/memory` | GET | List all streamer profiles |
+| `/api/memory/{id}` | GET | Get streamer profile & recommendations |
+| `/api/memory/{id}` | PUT | Update streamer profile |
 | `/api/jobs` | GET | List all jobs |
 | `/api/jobs/{id}` | GET | Get job status |
 | `/api/jobs/{id}/download` | GET | Download job output |
+| `/api/render/{id}` | GET | Get render job status |
+| `/api/render/{id}/download` | GET | Download rendered video |
 | `/ws/progress` | WebSocket | Real-time progress updates |
 | `/docs` | GET | Interactive API documentation |
 

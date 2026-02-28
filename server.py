@@ -249,7 +249,7 @@ async def _broadcast_progress(job_id: str, stage: str, progress: float, message:
         except Exception:
             dead.add(ws)
 
-    _ws_connections -= dead
+    _ws_connections.difference_update(dead)  # in-place, avoids UnboundLocalError
 
 
 def _sync_broadcast(job_id: str, stage: str, progress: float, message: str) -> None:

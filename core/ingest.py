@@ -73,8 +73,24 @@ def get_video_info(video_path: str) -> dict:
         "-show_format", "-show_streams",
         video_path
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    return json.loads(result.stdout)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except FileNotFoundError:
+        raise RuntimeError(
+            "ffprobe not found. Install ffmpeg: brew install ffmpeg"
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"ffprobe timed out for {video_path}")
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ffprobe failed for {video_path}: {result.stderr[:500]}"
+        )
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        raise RuntimeError(
+            f"ffprobe returned invalid JSON for {video_path}"
+        )
 
 
 def extract_audio(video_path: str, output_path: str = None) -> str:
@@ -166,6 +182,10 @@ def ingest(source: str, language: str = None) -> IngestResult:
     Returns:
         IngestResult with all processed data paths
     """
+    # Validate source
+    if not source or not source.strip():
+        raise ValueError("Source cannot be empty")
+
     # Step 1: Get or download video
     if source.startswith(("http://", "https://")):
         print(f"[Ingest] Downloading: {source}")
@@ -174,14 +194,43 @@ def ingest(source: str, language: str = None) -> IngestResult:
         video_path = source
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Video not found: {video_path}")
+        # Validate file extension for local files
+        valid_extensions = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v", ".ts"}
+        ext = os.path.splitext(video_path)[1].lower()
+        if ext not in valid_extensions:
+            raise ValueError(
+                f"Unsupported file format '{ext}'. "
+                f"Supported: {', '.join(sorted(valid_extensions))}"
+            )
 
     print(f"[Ingest] Video: {video_path}")
 
     # Step 2: Get video info
     info = get_video_info(video_path)
+    if not info or not info.get("streams"):
+        raise RuntimeError(
+            f"ffprobe returned no stream data for {video_path}. "
+            "File may be corrupted or not a valid video."
+        )
     duration = float(info.get("format", {}).get("duration", 0))
-    video_stream = next((s for s in info.get("streams", []) if s["codec_type"] == "video"), {})
-    fps = eval(video_stream.get("r_frame_rate", "30/1"))
+    video_stream = next(
+        (s for s in info.get("streams", []) if s.get("codec_type") == "video"),
+        None,
+    )
+    if video_stream is None:
+        raise RuntimeError(
+            f"No video stream found in {video_path}. "
+            "File may be audio-only or corrupted."
+        )
+    raw_fps = video_stream.get("r_frame_rate", "30/1")
+    try:
+        if "/" in str(raw_fps):
+            num, den = str(raw_fps).split("/", 1)
+            fps = float(num) / float(den) if float(den) != 0 else 30.0
+        else:
+            fps = float(raw_fps)
+    except (ValueError, ZeroDivisionError):
+        fps = 30.0
     width = int(video_stream.get("width", 1920))
     height = int(video_stream.get("height", 1080))
 
