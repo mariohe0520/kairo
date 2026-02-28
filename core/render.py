@@ -209,7 +209,7 @@ class RenderEngine:
             if edit_script.subtitle_segments:
                 self._burn_subtitles(audio_mixed_path, edit_script.subtitle_segments, output_path)
             else:
-                shutil.move(audio_mixed_path, output_path)
+                shutil.copy2(audio_mixed_path, output_path)
 
             self._progress("done", 1.0, f"Render complete: {output_path}")
             logger.info("Render complete: %s", output_path)
@@ -370,12 +370,6 @@ class RenderEngine:
 
         cmd = [self._ffmpeg, "-y"]
         cmd.extend(["-i", input_path])
-
-        filter_complex_parts = []
-        if video_filters:
-            filter_complex_parts.append(",".join(video_filters))
-        if audio_filters:
-            filter_complex_parts.append("")  # placeholder — handled via -af
 
         if video_filters:
             cmd.extend(["-vf", ",".join(video_filters)])
@@ -948,7 +942,9 @@ class RenderEngine:
                 text=True,
                 timeout=10,
             )
-            return "videotoolbox" in result.stdout.lower()
+            # ffmpeg prints hwaccels to stdout; combine with stderr as a safety net
+            combined = (result.stdout + result.stderr).lower()
+            return "videotoolbox" in combined
         except (FileNotFoundError, subprocess.TimeoutExpired):
             return False
 

@@ -54,15 +54,28 @@ echo -e "  ${GREEN}Python ${PY_VERSION} found${NC}"
 # Step 2: Install Python dependencies
 # ----------------------------------------------------------
 echo -e "${CYAN}[2/5]${NC} Installing Python dependencies..."
-if [ -f "requirements.txt" ]; then
-    pip3 install -q -r requirements.txt 2>&1 | tail -1 || {
-        echo -e "${YELLOW}  Warning: Some packages failed to install. Trying core deps...${NC}"
-        pip3 install -q fastapi "uvicorn[standard]" python-multipart websockets numpy 2>/dev/null || true
-    }
-    echo -e "  ${GREEN}Dependencies installed${NC}"
+
+# Determine the pip command to use
+PIP_CMD=""
+if command -v pip3 &> /dev/null; then
+    PIP_CMD="pip3"
+elif python3 -m pip --version &> /dev/null 2>&1; then
+    PIP_CMD="python3 -m pip"
 else
-    pip3 install -q fastapi "uvicorn[standard]" python-multipart websockets numpy 2>/dev/null || true
-    echo -e "  ${GREEN}Core dependencies installed${NC}"
+    echo -e "${YELLOW}  Warning: pip not found. Attempting to continue anyway...${NC}"
+fi
+
+if [ -n "$PIP_CMD" ]; then
+    if [ -f "requirements.txt" ]; then
+        $PIP_CMD install -q -r requirements.txt 2>&1 | tail -1 || {
+            echo -e "${YELLOW}  Warning: Some packages failed to install. Trying core deps...${NC}"
+            $PIP_CMD install -q fastapi "uvicorn[standard]" python-multipart websockets numpy 2>/dev/null || true
+        }
+        echo -e "  ${GREEN}Dependencies installed${NC}"
+    else
+        $PIP_CMD install -q fastapi "uvicorn[standard]" python-multipart websockets numpy 2>/dev/null || true
+        echo -e "  ${GREEN}Core dependencies installed${NC}"
+    fi
 fi
 
 # ----------------------------------------------------------
@@ -131,10 +144,18 @@ echo ""
 mkdir -p output
 
 # Kill any existing server on the port
-if lsof -i :${PORT} -t &>/dev/null 2>&1; then
-    echo -e "  ${YELLOW}Port ${PORT} is in use. Stopping existing process...${NC}"
-    kill $(lsof -i :${PORT} -t) 2>/dev/null || true
-    sleep 1
+EXISTING_PIDS=$(lsof -i :"${PORT}" -t 2>/dev/null || true)
+if [ -n "$EXISTING_PIDS" ]; then
+    echo -e "  ${YELLOW}Port ${PORT} is in use. Stopping existing process(es)...${NC}"
+    echo "$EXISTING_PIDS" | xargs kill 2>/dev/null || true
+    sleep 2
+    # Force kill if still running
+    STILL_RUNNING=$(lsof -i :"${PORT}" -t 2>/dev/null || true)
+    if [ -n "$STILL_RUNNING" ]; then
+        echo -e "  ${YELLOW}Force killing remaining processes on port ${PORT}...${NC}"
+        echo "$STILL_RUNNING" | xargs kill -9 2>/dev/null || true
+        sleep 1
+    fi
 fi
 
 # Start the server in background
@@ -169,17 +190,23 @@ for i in {1..20}; do
 done
 
 if [ "$READY" = true ]; then
+    # Determine display URL — use localhost when binding to 0.0.0.0 or 127.0.0.1
+    DISPLAY_HOST="${HOST}"
+    if [ "${HOST}" = "0.0.0.0" ] || [ "${HOST}" = "127.0.0.1" ]; then
+        DISPLAY_HOST="localhost"
+    fi
+
     echo ""
     echo -e "${GREEN}${BOLD}  ================================================${NC}"
     echo -e "${GREEN}${BOLD}      Kairo is running!${NC}"
     echo -e "${GREEN}${BOLD}  ================================================${NC}"
     echo ""
-    echo -e "  ${BOLD}Web UI:${NC}    ${CYAN}http://localhost:${PORT}${NC}"
-    echo -e "  ${BOLD}API Docs:${NC}  ${CYAN}http://localhost:${PORT}/docs${NC}"
-    echo -e "  ${BOLD}Health:${NC}    ${CYAN}http://localhost:${PORT}/api/health${NC}"
+    echo -e "  ${BOLD}Web UI:${NC}    ${CYAN}http://${DISPLAY_HOST}:${PORT}${NC}"
+    echo -e "  ${BOLD}API Docs:${NC}  ${CYAN}http://${DISPLAY_HOST}:${PORT}/docs${NC}"
+    echo -e "  ${BOLD}Health:${NC}    ${CYAN}http://${DISPLAY_HOST}:${PORT}/api/health${NC}"
     echo ""
     echo -e "  ${BOLD}How to use:${NC}"
-    echo -e "    1. Open ${CYAN}http://localhost:${PORT}${NC} in your browser"
+    echo -e "    1. Open ${CYAN}http://${DISPLAY_HOST}:${PORT}${NC} in your browser"
     echo -e "    2. Paste a YouTube/Twitch URL or drag-drop a video file"
     echo -e "    3. Click ${PURPLE}\"Create Viral Clip\"${NC}"
     echo -e "    4. Watch the AI pipeline process your video"
@@ -190,13 +217,13 @@ if [ "$READY" = true ]; then
 
     # Try to open browser
     if command -v open &> /dev/null; then
-        open "http://localhost:${PORT}" 2>/dev/null || true
+        open "http://${DISPLAY_HOST}:${PORT}" 2>/dev/null || true
     elif command -v xdg-open &> /dev/null; then
-        xdg-open "http://localhost:${PORT}" 2>/dev/null || true
+        xdg-open "http://${DISPLAY_HOST}:${PORT}" 2>/dev/null || true
     fi
 else
     echo -e "${RED}WARNING: Server did not respond within 20 seconds.${NC}"
-    echo -e "  It may still be starting. Try: ${CYAN}http://localhost:${PORT}${NC}"
+    echo -e "  It may still be starting. Try: ${CYAN}http://${HOST}:${PORT}${NC}"
     echo ""
 fi
 

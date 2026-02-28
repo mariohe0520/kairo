@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 import time
 import uuid
@@ -252,15 +253,27 @@ async def _broadcast_progress(job_id: str, stage: str, progress: float, message:
 
 
 def _sync_broadcast(job_id: str, stage: str, progress: float, message: str) -> None:
-    """Synchronous wrapper for broadcasting progress from background threads."""
+    """Synchronous wrapper for broadcasting progress from background threads.
+
+    FastAPI BackgroundTasks run inside the main event loop, so we can
+    schedule the coroutine directly.  For true background threads we
+    fall back to call_soon_threadsafe.
+    """
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.ensure_future(_broadcast_progress(job_id, stage, progress, message))
-        else:
-            loop.run_until_complete(_broadcast_progress(job_id, stage, progress, message))
+        loop = asyncio.get_running_loop()
+        # We are inside the running event loop (BackgroundTasks context)
+        asyncio.ensure_future(_broadcast_progress(job_id, stage, progress, message))
     except RuntimeError:
-        pass  # No event loop available (pure background thread)
+        # No running loop -- try to get any loop and schedule on it
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.call_soon_threadsafe(
+                    asyncio.ensure_future,
+                    _broadcast_progress(job_id, stage, progress, message),
+                )
+        except RuntimeError:
+            pass  # No event loop available at all
 
 
 # ---------------------------------------------------------------------------
@@ -382,7 +395,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Electron app uses file:// protocol
-    allow_credentials=True,
+    allow_credentials=False,  # Cannot use credentials with wildcard origin
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -395,18 +408,89 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health():
-    """Health check endpoint."""
+    """Health check endpoint — returns server status and system tool availability."""
+    import shutil
+    import platform
+
+    def _tool_version(cmd: list[str]) -> Optional[str]:
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            return r.stdout.strip().split("\n")[0] if r.returncode == 0 else None
+        except Exception:
+            return None
+
+    ffmpeg_ok = shutil.which("ffmpeg") is not None
+    ytdlp_ok = shutil.which("yt-dlp") is not None
+    whisper_ok = shutil.which("whisper") is not None
+
     return {
         "status": "ok",
         "version": "0.1.0",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "active_jobs": sum(1 for j in _jobs.values() if j.status == JobStatus.RUNNING),
+        "total_jobs": len(_jobs),
+        "system": {
+            "platform": platform.system(),
+            "python": sys.version.split()[0],
+            "ffmpeg": ffmpeg_ok,
+            "yt_dlp": ytdlp_ok,
+            "whisper": whisper_ok,
+            "llm": "claude" if os.environ.get("ANTHROPIC_API_KEY") else (
+                "openai" if os.environ.get("OPENAI_API_KEY") else "heuristic"
+            ),
+        },
     }
 
 
 # ---------------------------------------------------------------------------
 # Ingest endpoints
 # ---------------------------------------------------------------------------
+
+
+# Maximum upload file size: 5 GB
+_MAX_UPLOAD_SIZE = 5 * 1024 * 1024 * 1024
+_ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv", ".wmv", ".m4v", ".ts"}
+
+
+def _validate_upload(file: UploadFile) -> None:
+    """Validate an uploaded file's name and extension."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Uploaded file has no filename")
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in _ALLOWED_VIDEO_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(sorted(_ALLOWED_VIDEO_EXTENSIONS))}",
+        )
+
+
+async def _save_upload(file: UploadFile) -> str:
+    """Save an uploaded file with size validation. Returns the saved path."""
+    _validate_upload(file)
+    upload_dir = WORKSPACE / "output" / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    # Sanitize filename: keep only alphanumeric, dots, hyphens, underscores
+    safe_name = re.sub(r'[^\w.\-]', '_', file.filename or "upload")
+    dest = upload_dir / f"upload_{uuid.uuid4().hex[:8]}_{safe_name}"
+    total_size = 0
+    with open(dest, "wb") as f_out:
+        while True:
+            chunk = await file.read(8 * 1024 * 1024)  # 8MB chunks
+            if not chunk:
+                break
+            total_size += len(chunk)
+            if total_size > _MAX_UPLOAD_SIZE:
+                f_out.close()
+                os.unlink(dest)
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File too large. Maximum size: {_MAX_UPLOAD_SIZE // (1024**3)} GB",
+                )
+            f_out.write(chunk)
+    if total_size == 0:
+        os.unlink(dest)
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    return str(dest)
 
 
 @app.post("/api/ingest")
@@ -424,20 +508,17 @@ async def start_ingest(
     source = None
 
     if url:
+        # Basic URL validation
+        url = url.strip()
+        if not url.startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
         source = url
     elif file_path:
         if not os.path.isfile(file_path):
             raise HTTPException(status_code=400, detail=f"File not found: {file_path}")
         source = file_path
     elif file:
-        # Save uploaded file to temp location
-        upload_dir = WORKSPACE / "output" / "uploads"
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        dest = upload_dir / f"upload_{uuid.uuid4().hex[:8]}_{file.filename}"
-        with open(dest, "wb") as f_out:
-            content = await file.read()
-            f_out.write(content)
-        source = str(dest)
+        source = await _save_upload(file)
     else:
         raise HTTPException(
             status_code=400,
@@ -801,7 +882,8 @@ async def detect_highlights(
             f"Target mood: {tmpl['mood']}, Duration: {tmpl['durationRange'][0]}-{tmpl['durationRange'][1]}s\n"
         )
 
-    system_prompt = (
+    # Claude prompt: asks for a JSON array directly (Claude handles this naturally)
+    claude_system_prompt = (
         "You are an expert viral video editor. Analyze this gaming/streaming "
         "transcript and identify the best moments for short-form clips "
         "(TikTok, YouTube Shorts, Reels).\n\n"
@@ -811,8 +893,24 @@ async def detect_highlights(
         "3. A suggested hook/title\n"
         "4. Virality score (1-10)\n\n"
         f"Find up to {max_highlights} highlights.{template_context}\n\n"
-        "Return JSON array with format:\n"
+        "Return ONLY a JSON array with this exact format (no markdown, no explanation):\n"
         '[{"start": 0.0, "end": 30.0, "reason": "...", "hook": "...", "virality": 8}]'
+    )
+
+    # OpenAI prompt: json_object mode requires response to be a JSON object (not array)
+    # and the word "json" must appear in the prompt
+    openai_system_prompt = (
+        "You are an expert viral video editor. Analyze this gaming/streaming "
+        "transcript and identify the best moments for short-form clips "
+        "(TikTok, YouTube Shorts, Reels).\n\n"
+        "For each highlight, identify:\n"
+        "1. Start and end timestamps (in seconds)\n"
+        "2. Why this moment is engaging (emotion, action, humor, surprise)\n"
+        "3. A suggested hook/title\n"
+        "4. Virality score (1-10)\n\n"
+        f"Find up to {max_highlights} highlights.{template_context}\n\n"
+        'Return a JSON object with a "highlights" key containing an array:\n'
+        '{"highlights": [{"start": 0.0, "end": 30.0, "reason": "...", "hook": "...", "virality": 8}]}'
     )
 
     highlights = []
@@ -827,14 +925,13 @@ async def detect_highlights(
             import anthropic
             client = anthropic.Anthropic(api_key=anthropic_key)
             response = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-opus-4-5",
                 max_tokens=2000,
-                system=system_prompt,
+                system=claude_system_prompt,
                 messages=[{"role": "user", "content": f"Transcript:\n{transcript_text}"}],
             )
             raw = response.content[0].text
-            # Extract JSON from response
-            import re
+            # Extract JSON array from response (Claude may add explanation text)
             json_match = re.search(r'\[.*\]', raw, re.DOTALL)
             if json_match:
                 highlights = json.loads(json_match.group())
@@ -849,7 +946,7 @@ async def detect_highlights(
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": openai_system_prompt},
                     {"role": "user", "content": f"Transcript:\n{transcript_text}"},
                 ],
                 max_tokens=2000,
@@ -857,10 +954,11 @@ async def detect_highlights(
             )
             raw = response.choices[0].message.content
             parsed = json.loads(raw)
+            # json_object mode always returns a dict; highlights key holds the array
             if isinstance(parsed, list):
                 highlights = parsed
-            elif isinstance(parsed, dict) and "highlights" in parsed:
-                highlights = parsed["highlights"]
+            elif isinstance(parsed, dict):
+                highlights = parsed.get("highlights") or parsed.get("clips") or []
             llm_used = "openai"
         except Exception as e:
             logger.warning("OpenAI highlight detection failed: %s", e)
@@ -1117,26 +1215,26 @@ async def run_full_pipeline(
     The pipeline generates top-3 clip candidates, scores them, and selects
     the highest quality one. It also records the result for future learning.
     """
-    source = url or file_path
-
-    # Handle file upload
-    if not source and file:
-        upload_dir = WORKSPACE / "output" / "uploads"
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        dest = upload_dir / f"upload_{uuid.uuid4().hex[:8]}_{file.filename}"
-        with open(dest, "wb") as f_out:
-            content = await file.read()
-            f_out.write(content)
-        source = str(dest)
+    source = None
+    if url:
+        url = url.strip()
+        if not url.startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
+        source = url
+    elif file_path:
+        if not os.path.isfile(file_path):
+            raise HTTPException(status_code=400, detail=f"File not found: {file_path}")
+        source = file_path
+    elif file:
+        source = await _save_upload(file)
 
     if not source:
         raise HTTPException(status_code=400, detail="Provide 'url', 'file_path', or upload a 'file'")
 
-    job_id = str(uuid.uuid4())[:12]
-    job = Job(job_id=job_id, job_type="pipeline")
-    _jobs[job_id] = job
+    job = _create_job("pipeline")
+    job_id = job.job_id
 
-    def _run_pipeline():
+    async def _run_pipeline():
         try:
             job.status = JobStatus.RUNNING
             job.message = "Starting autonomous pipeline"
@@ -1154,7 +1252,11 @@ async def run_full_pipeline(
                 progress_callback=progress_cb,
             )
 
-            result = pipeline.run(source, language=language)
+            # Run the synchronous pipeline in a thread pool to avoid blocking
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None, lambda: pipeline.run(source, language=language)
+            )
 
             job.status = JobStatus.COMPLETED
             job.progress = 1.0
@@ -1188,6 +1290,7 @@ async def run_full_pipeline(
             logger.exception("Pipeline failed: %s", e)
             job.status = JobStatus.FAILED
             job.error = str(e)
+            job.message = f"Failed: {e}"
             job.completed_at = datetime.now(timezone.utc).isoformat()
             _sync_broadcast(job_id, "error", 0.0, str(e))
 
