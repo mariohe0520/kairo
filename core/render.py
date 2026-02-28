@@ -151,6 +151,10 @@ class RenderEngine:
 
         # Detect VideoToolbox availability on macOS
         self._videotoolbox_available = self._detect_videotoolbox()
+        # Detect drawtext filter (requires libfreetype, not always compiled in)
+        self._drawtext_available = self._detect_drawtext()
+        if not self._drawtext_available:
+            logger.info("drawtext filter not available in this ffmpeg build — text overlays will be skipped")
 
     # ------------------------------------------------------------------
     # Public API
@@ -249,7 +253,9 @@ class RenderEngine:
             self._cut_segment(source, beat.start, beat.end, output_config, raw_path)
 
             # Apply effects (slow-mo, zoom, shake, flash, text overlay)
-            if beat.effects or beat.text_overlay or beat.pacing != 1.0:
+            # Only count text_overlay if drawtext is actually available
+            needs_text = bool(beat.text_overlay) and self._drawtext_available
+            if beat.effects or needs_text or beat.pacing != 1.0:
                 self._apply_effects(raw_path, beat, output_config, fx_path)
                 segment_paths.append(fx_path)
                 _safe_remove(raw_path)
@@ -360,8 +366,8 @@ class RenderEngine:
                     f":cr='if(between(t,0,{flash_duration:.3f}),128,cr(X,Y))'"
                 )
 
-        # --- Text overlay ---
-        if beat.text_overlay:
+        # --- Text overlay (only if drawtext filter is available in this ffmpeg build) ---
+        if beat.text_overlay and self._drawtext_available:
             video_filters.append(self._build_drawtext_filter(beat.text_overlay, beat.text_style))
 
         # Build command
@@ -674,7 +680,11 @@ class RenderEngine:
                 "-loglevel", "warning",
                 output_path,
             ]
-            self._run_ffmpeg(cmd_fallback, "burn_subtitles_fallback")
+            try:
+                self._run_ffmpeg(cmd_fallback, "burn_subtitles_fallback")
+            except RuntimeError:
+                logger.warning("All subtitle filters unavailable — outputting without subtitles")
+                shutil.copy2(video_path, output_path)
 
         _safe_remove(ass_path)
         return output_path
@@ -931,6 +941,17 @@ class RenderEngine:
     # ------------------------------------------------------------------
     # Hardware acceleration
     # ------------------------------------------------------------------
+
+    def _detect_drawtext(self) -> bool:
+        """Check if ffmpeg has the drawtext filter compiled in (requires libfreetype)."""
+        try:
+            result = subprocess.run(
+                [self._ffmpeg, "-filters"],
+                capture_output=True, text=True, timeout=10,
+            )
+            return "drawtext" in (result.stdout + result.stderr)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
 
     def _detect_videotoolbox(self) -> bool:
         """Check if VideoToolbox hardware acceleration is available."""

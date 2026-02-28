@@ -232,7 +232,7 @@ class DNAAgent:
         llm_model: str = "llama3.2:3b",
         hook_duration: float = 3.0,
         min_beat_duration: float = 1.0,
-        anti_fluff_min_signals: int = 2,
+        anti_fluff_min_signals: int = 1,
     ) -> None:
         self.llm_model = llm_model
         self.hook_duration = hook_duration
@@ -300,7 +300,12 @@ class DNAAgent:
         all_beats = self._assign_output_times(all_beats)
 
         # --- Anti-fluff validation ---
+        # Allow template to override the min_signals threshold (for self-correction loop)
+        orig_min_signals = self.anti_fluff_min_signals
+        if "_anti_fluff_min_signals" in template:
+            self.anti_fluff_min_signals = int(template["_anti_fluff_min_signals"])
         validated_beats = self._anti_fluff_validate(all_beats)
+        self.anti_fluff_min_signals = orig_min_signals  # restore
 
         # --- Reassign output times after fluff removal ---
         validated_beats = self._assign_output_times(validated_beats)
@@ -919,7 +924,7 @@ class DNAAgent:
                     has_game_event=ann.has_game_event,
                     has_emotion_peak=ann.has_emotion_peak,
                     has_speech_content=bool(ann.speech_text),
-                    has_visual_change=ann.composite_score > 0.3,
+                    has_visual_change=ann.composite_score > 0.05,  # low threshold for heuristic mode
                 )
             )
 
