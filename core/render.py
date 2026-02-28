@@ -376,12 +376,18 @@ class RenderEngine:
 
             elif etype == "flash":
                 flash_duration = params.get("duration", 0.15)
-                # Use p(X,Y) (current-plane pixel accessor) — compatible with FFmpeg 8+.
-                # lum(X,Y)/cb(X,Y)/cr(X,Y) were removed in FFmpeg 8.
+                flash_color = params.get("color", "#FFFFFF")
+                # Parse color for YCbCr values
+                is_white = flash_color.upper() in ("#FFFFFF", "#FFF", "WHITE")
+                lum_val = 255 if is_white else 16
+                cb_val = 128
+                cr_val = 128
+                # FFmpeg 8+ removed `between()` from geq. Use `lte(t,T)` instead.
+                # Also use `p(X,Y)` not `lum(X,Y)` (removed in FFmpeg 8).
                 video_filters.append(
-                    f"geq=lum='if(between(t,0,{flash_duration:.3f}),255,p(X,Y))'"
-                    f":cb='if(between(t,0,{flash_duration:.3f}),128,p(X,Y))'"
-                    f":cr='if(between(t,0,{flash_duration:.3f}),128,p(X,Y))'"
+                    f"geq=lum='if(lte(t,{flash_duration:.3f}),{lum_val},p(X,Y))'"
+                    f":cb='if(lte(t,{flash_duration:.3f}),{cb_val},p(X,Y))'"
+                    f":cr='if(lte(t,{flash_duration:.3f}),{cr_val},p(X,Y))'"
                 )
 
         # --- Text overlay (only if drawtext filter is available in this ffmpeg build) ---
