@@ -1247,8 +1247,26 @@ async def run_full_pipeline(
                 job.message = message
                 _sync_broadcast(job_id, stage, progress, message)
 
+            # Resolve effective template:
+            # 1. User explicitly picked a template → use it
+            # 2. User picked a persona → use that persona's preferred template
+            # 3. Neither → auto-select from content
+            effective_template = template_id
+            if not effective_template and streamer_id and streamer_id in PERSONAS:
+                effective_template = PERSONAS[streamer_id].get("preferred_template")
+                if effective_template:
+                    logger.info(
+                        "Using persona-preferred template: %s for persona %s",
+                        effective_template, streamer_id,
+                    )
+
+            pipeline_config = {}
+            if effective_template:
+                pipeline_config["template_id"] = effective_template
+
             pipeline = KairoPipeline(
                 streamer_id=streamer_id or "default",
+                config=pipeline_config,
                 progress_callback=progress_cb,
             )
 

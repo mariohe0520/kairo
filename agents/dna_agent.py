@@ -423,12 +423,13 @@ class DNAAgent:
             )
 
         # Beat 2: Snap to black + whoosh transition (0.3s)
+        # source_end must be > source_start to avoid zero-duration crash in render
         beats.append(
             EditBeat(
                 phase="hook",
                 beat_type="transition",
                 source_start=candidate.start,
-                source_end=candidate.start,
+                source_end=min(candidate.start + 0.3, candidate.end),
                 output_start=1.5,
                 output_end=1.8,
                 intensity=70,

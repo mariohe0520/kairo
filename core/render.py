@@ -238,6 +238,14 @@ class RenderEngine:
         total = len(beats)
 
         for idx, beat in enumerate(beats):
+            # Skip zero-duration beats (e.g. pure-black transition frames)
+            if beat.duration <= 0:
+                logger.warning(
+                    "Skipping beat %d (%s) — zero duration (start=%.3f end=%.3f)",
+                    idx, beat.phase, beat.start, beat.end,
+                )
+                continue
+
             progress = 0.05 + (idx / total) * 0.55
             self._progress(
                 "segments",
