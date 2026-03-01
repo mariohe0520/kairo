@@ -714,11 +714,148 @@ class RenderEngine:
             try:
                 self._run_ffmpeg(cmd_fallback, "burn_subtitles_fallback")
             except RuntimeError:
-                logger.warning("All subtitle filters unavailable — outputting without subtitles")
-                shutil.copy2(video_path, output_path)
+                logger.warning("libass/subtitles filter unavailable — trying Pillow fallback")
+                if not self._burn_subtitles_pillow(video_path, subtitle_segments, output_path):
+                    logger.warning("Pillow fallback also failed — outputting without subtitles")
+                    shutil.copy2(video_path, output_path)
 
         _safe_remove(ass_path)
         return output_path
+
+    def _burn_subtitles_pillow(
+        self,
+        video_path: str,
+        subtitle_segments: list,
+        output_path: str,
+    ) -> bool:
+        """
+        Pillow-based subtitle burning fallback.
+
+        Renders each subtitle as a transparent RGBA PNG (full video dimensions),
+        then composites via ffmpeg overlay filter — no libass or libfreetype needed.
+        """
+        try:
+            from PIL import Image, ImageDraw, ImageFont  # type: ignore
+        except ImportError:
+            logger.warning("Pillow not installed — pip install Pillow")
+            return False
+
+        probe = self._probe_streams(video_path)
+        v_stream = next(
+            (s for s in probe.get("streams", []) if s.get("codec_type") == "video"), None
+        )
+        if not v_stream:
+            return False
+
+        vid_w = int(v_stream.get("width", 1920))
+        vid_h = int(v_stream.get("height", 1080))
+
+        font_size = max(32, vid_h // 20)
+        font = None
+        for candidate in [
+            "/System/Library/Fonts/Supplemental/Arial.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/Library/Fonts/Arial.ttf",
+            "/System/Library/Fonts/STHeiti Medium.ttc",
+            "/System/Library/Fonts/PingFang.ttc",
+        ]:
+            if os.path.exists(candidate):
+                try:
+                    font = ImageFont.truetype(candidate, font_size)
+                    break
+                except Exception:
+                    continue
+        if font is None:
+            font = ImageFont.load_default()
+
+        # Normalise segments
+        segs = []
+        for seg in subtitle_segments:
+            if isinstance(seg, SubtitleSegment):
+                s, e, txt = seg.start, seg.end, seg.text
+            elif isinstance(seg, dict):
+                s, e, txt = float(seg.get("start", 0)), float(seg.get("end", 0)), seg.get("text", "")
+            else:
+                s = float(getattr(seg, "start", 0))
+                e = float(getattr(seg, "end", 0))
+                txt = str(getattr(seg, "text", ""))
+            if txt.strip() and e > s:
+                segs.append((s, e, txt.strip()))
+
+        if not segs:
+            shutil.copy2(video_path, output_path)
+            return True
+
+        work_dir = os.path.dirname(os.path.abspath(output_path))
+        png_paths = []
+
+        try:
+            pad_x = max(16, vid_w // 60)
+            pad_y = max(10, vid_h // 80)
+            margin_bottom = max(40, vid_h // 16)
+
+            for i, (s, e, txt) in enumerate(segs):
+                img = Image.new("RGBA", (vid_w, vid_h), (0, 0, 0, 0))
+                draw = ImageDraw.Draw(img)
+
+                try:
+                    bbox = draw.textbbox((0, 0), txt, font=font)
+                    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+                except AttributeError:
+                    tw, th = draw.textsize(txt, font=font)  # type: ignore
+
+                x = max(pad_x, (vid_w - tw) // 2)
+                y = vid_h - th - margin_bottom - pad_y * 2
+
+                draw.rectangle(
+                    (x - pad_x, y - pad_y, x + tw + pad_x, y + th + pad_y),
+                    fill=(0, 0, 0, 150),
+                )
+                draw.text((x + 2, y + 2), txt, font=font, fill=(0, 0, 0, 200))
+                draw.text((x, y), txt, font=font, fill=(255, 255, 255, 255))
+
+                png_path = os.path.join(work_dir, f"_ksub_{i:05d}.png")
+                img.save(png_path, "PNG")
+                png_paths.append((s, e, png_path))
+
+            # Build overlay filtergraph
+            cmd = [self._ffmpeg, "-y", "-i", video_path]
+            for _, _, png in png_paths:
+                cmd += ["-i", png]
+
+            parts = []
+            prev = "0:v"
+            for idx, (s, e, _) in enumerate(png_paths):
+                cur = f"ov{idx}"
+                inp = str(idx + 1)
+                enable = f"between(t,{s:.3f},{e:.3f})"
+                parts.append(f"[{prev}][{inp}:v]overlay=0:0:enable='{enable}'[{cur}]")
+                prev = cur
+
+            cmd += [
+                "-filter_complex", ";".join(parts),
+                "-map", f"[{prev}]",
+                "-map", "0:a?",
+                "-c:v", "libx264",
+                "-preset", "fast",
+                "-crf", "18",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "copy",
+                "-movflags", "+faststart",
+                "-loglevel", "warning",
+                output_path,
+            ]
+
+            self._run_ffmpeg(cmd, "burn_subtitles_pillow")
+            logger.info("Pillow subtitle burn: %d segments", len(png_paths))
+            return True
+
+        except Exception as exc:
+            logger.warning("Pillow subtitle burn failed: %s", exc)
+            return False
+        finally:
+            for _, _, png in png_paths:
+                _safe_remove(png)
 
     def _finalize_output(self, input_path: str, output_path: str, output_config: dict) -> str:
         """
