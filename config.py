@@ -36,6 +36,11 @@ ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")
 #: OpenAI API Key（备选 LLM）
 OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")
 
+#: 火山引擎 ARK / 豆包 API Key（OpenAI 兼容格式）
+ARK_API_KEY: str = os.environ.get("ARK_API_KEY", "")
+ARK_BASE_URL: str = os.environ.get("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
+ARK_MODEL: str = os.environ.get("ARK_MODEL", "doubao-seed-1-6-250615")
+
 # ---------------------------------------------------------------------------
 # 服务器配置
 # ---------------------------------------------------------------------------
@@ -70,7 +75,7 @@ WHISPER_MODEL: str = os.environ.get("KAIRO_WHISPER_MODEL", "base")
 
 def has_llm() -> bool:
     """是否配置了任何 LLM API Key。"""
-    return bool(ANTHROPIC_API_KEY or OPENAI_API_KEY)
+    return bool(ANTHROPIC_API_KEY or OPENAI_API_KEY or ARK_API_KEY)
 
 def llm_provider() -> str:
     """返回当前使用的 LLM 提供商名称。"""
@@ -78,6 +83,8 @@ def llm_provider() -> str:
         return "claude"
     if OPENAI_API_KEY:
         return "openai"
+    if ARK_API_KEY:
+        return "ark"
     return "heuristic"
 
 def print_config_summary() -> None:

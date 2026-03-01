@@ -439,8 +439,11 @@ async def health():
             "ffmpeg": ffmpeg_ok,
             "yt_dlp": ytdlp_ok,
             "whisper": whisper_ok,
-            "llm": "claude" if os.environ.get("ANTHROPIC_API_KEY") else (
-                "openai" if os.environ.get("OPENAI_API_KEY") else "heuristic"
+            "llm": (
+                "claude" if os.environ.get("ANTHROPIC_API_KEY") else
+                "openai" if os.environ.get("OPENAI_API_KEY") else
+                "ark" if os.environ.get("ARK_API_KEY") else
+                "heuristic"
             ),
         },
     }
@@ -1012,7 +1015,6 @@ async def detect_highlights(
             )
             raw = response.choices[0].message.content
             parsed = json.loads(raw)
-            # json_object mode always returns a dict; highlights key holds the array
             if isinstance(parsed, list):
                 highlights = parsed
             elif isinstance(parsed, dict):
@@ -1020,6 +1022,38 @@ async def detect_highlights(
             llm_used = "openai"
         except Exception as e:
             logger.warning("OpenAI highlight detection failed: %s", e)
+
+    ark_key = os.environ.get("ARK_API_KEY")
+    if not highlights and ark_key:
+        try:
+            import openai
+            ark_client = openai.OpenAI(
+                api_key=ark_key,
+                base_url=os.environ.get("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
+            )
+            ark_model = os.environ.get("ARK_MODEL", "doubao-pro-32k")
+            response = ark_client.chat.completions.create(
+                model=ark_model,
+                messages=[
+                    {"role": "system", "content": openai_system_prompt},
+                    {"role": "user", "content": f"Transcript:\n{transcript_text}"},
+                ],
+                max_tokens=2000,
+            )
+            raw = response.choices[0].message.content or ""
+            # 尝试解析 JSON（可能包裹在 markdown 代码块中）
+            json_match = re.search(r'\[.*\]', raw, re.DOTALL)
+            if json_match:
+                highlights = json.loads(json_match.group())
+            else:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    highlights = parsed
+                elif isinstance(parsed, dict):
+                    highlights = parsed.get("highlights") or parsed.get("clips") or []
+            llm_used = "ark"
+        except Exception as e:
+            logger.warning("ARK (豆包) highlight detection failed: %s", e)
 
     if not highlights:
         # Heuristic fallback: find segments with high energy words
