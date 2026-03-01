@@ -34,6 +34,7 @@ import json
 import logging
 import math
 import os
+import shutil
 import statistics
 import time
 from dataclasses import asdict, dataclass, field
@@ -57,7 +58,7 @@ from agents.caption_agent import (                                    # noqa: E4
     CaptionTimeline,
     SegmentAnnotation,
 )
-from agents.dvd_agent import DVDAgent, ClipCandidate                  # noqa: E402
+from agents.dvd_agent import DVDAgent, ClipCandidate, WindowScore     # noqa: E402
 from agents.dna_agent import (                                        # noqa: E402
     DNAAgent,
     EditScript as DNAEditScript,
@@ -306,6 +307,80 @@ _MOOD_FROM_CONTENT: dict[str, str] = {
     "neutral": "chill",
 }
 
+_PERSONA_REGISTRY: dict[str, dict[str, Any]] = {
+    "hype-streamer": {
+        "id": "hype-streamer",
+        "name": "HypeAndy",
+        "energy_level": 9,
+        "humor_style": "loud",
+        "catchphrases": ["lock in", "this is free", "send him home"],
+        "style_prefs": {"effects": 85, "hook": 90, "transitions": 75, "subtitles": 55, "bgm": 85},
+    },
+    "chill-streamer": {
+        "id": "chill-streamer",
+        "name": "ZenVibes",
+        "energy_level": 3,
+        "humor_style": "dry",
+        "catchphrases": ["clean", "nice and easy", "we take those"],
+        "style_prefs": {"effects": 35, "hook": 55, "transitions": 70, "subtitles": 60, "bgm": 70},
+    },
+    "chaos-gremlin": {
+        "id": "chaos-gremlin",
+        "name": "TiltLord",
+        "energy_level": 10,
+        "humor_style": "chaotic",
+        "catchphrases": ["nahhh", "that is criminal", "what is this lobby"],
+        "style_prefs": {"effects": 95, "hook": 85, "transitions": 90, "subtitles": 80, "bgm": 80},
+    },
+    "tactician": {
+        "id": "tactician",
+        "name": "SteadyAim",
+        "energy_level": 5,
+        "humor_style": "sarcastic",
+        "catchphrases": ["read that", "angle won", "macro diff"],
+        "style_prefs": {"effects": 50, "hook": 70, "transitions": 65, "subtitles": 85, "bgm": 45},
+    },
+    "squad-captain": {
+        "id": "squad-captain",
+        "name": "SquadLeader",
+        "energy_level": 7,
+        "humor_style": "wholesome",
+        "catchphrases": ["good comms", "play together", "team diff"],
+        "style_prefs": {"effects": 60, "hook": 72, "transitions": 70, "subtitles": 85, "bgm": 65},
+    },
+}
+
+_INTENT_TEMPLATE_KEYWORDS: list[tuple[str, str]] = [
+    ("teaching", "edu-breakdown"),
+    ("tutorial", "edu-breakdown"),
+    ("analysis", "edu-breakdown"),
+    ("讲解", "edu-breakdown"),
+    ("教学", "edu-breakdown"),
+    ("clutch", "clutch-master"),
+    ("ace", "kill-montage"),
+    ("headshot", "kill-montage"),
+    ("highlights", "kill-montage"),
+    ("击杀", "kill-montage"),
+    ("反杀", "comeback-king"),
+    ("comeback", "comeback-king"),
+    ("逆风翻盘", "comeback-king"),
+    ("rage", "rage-quit-montage"),
+    ("funny", "rage-quit-montage"),
+    ("搞笑", "rage-quit-montage"),
+    ("meme", "rage-quit-montage"),
+    ("story", "session-story"),
+    ("剧情", "session-story"),
+    ("squad", "squad-moments"),
+    ("duo", "squad-moments"),
+    ("组队", "squad-moments"),
+    ("douyin", "tiktok-vertical"),
+    ("tiktok", "tiktok-vertical"),
+    ("shorts", "tiktok-vertical"),
+    ("reels", "tiktok-vertical"),
+    ("抖音", "tiktok-vertical"),
+    ("短视频", "tiktok-vertical"),
+]
+
 
 # ---------------------------------------------------------------------------
 # Quality thresholds
@@ -416,6 +491,7 @@ class KairoPipeline:
         output_dir = self.config.get("output_dir", str(OUTPUT_DIR))
 
         result = PipelineResult(source=source, streamer_id=self.streamer_id)
+        ingest_result = None  # 提前声明，供 finally 块清理帧文件
 
         logger.info(
             "Pipeline starting: source=%s, streamer=%s, candidates=%d",
@@ -494,6 +570,15 @@ class KairoPipeline:
             result.report = f"Pipeline error: {e}"
             self._emit_progress("error", 0.0, f"Pipeline failed: {e}")
 
+        finally:
+            # 自动清理帧文件（1小时视频约 500MB，默认开启）
+            _auto_cleanup = os.environ.get("KAIRO_CLEANUP_FRAMES", "1") != "0"
+            if _auto_cleanup and ingest_result and getattr(ingest_result, "frames_dir", None):
+                _frames = Path(ingest_result.frames_dir)
+                if _frames.exists():
+                    shutil.rmtree(_frames, ignore_errors=True)
+                    logger.info("已清理帧目录: %s", _frames)
+
         result.total_time_sec = time.time() - t_start
         self._emit_progress(
             "done", 1.0,
@@ -545,6 +630,12 @@ class KairoPipeline:
         if explicit_id and explicit_id in _TEMPLATE_REGISTRY:
             logger.info("Using explicitly requested template: %s", explicit_id)
             return dict(_TEMPLATE_REGISTRY[explicit_id])
+
+        # 1.5 Intent-aware selection from creator brief / target platform
+        intent_template = self._template_from_intent()
+        if intent_template and intent_template in _TEMPLATE_REGISTRY:
+            logger.info("Using intent-selected template: %s", intent_template)
+            return dict(_TEMPLATE_REGISTRY[intent_template])
 
         # 2. Streamer memory recommendation
         if streamer_id:
@@ -650,23 +741,33 @@ class KairoPipeline:
         # Explicit override
         explicit_persona = self.config.get("persona_id")
         if explicit_persona:
-            return {"name": explicit_persona, "id": explicit_persona}
+            base = dict(_PERSONA_REGISTRY.get(
+                explicit_persona,
+                {"id": explicit_persona, "name": explicit_persona, "energy_level": 6, "humor_style": "neutral", "catchphrases": []},
+            ))
+            return self._augment_persona_with_creator_brief(base)
+
+        # Legacy mode: streamer_id may be a preset persona id.
+        if streamer_id in _PERSONA_REGISTRY:
+            return self._augment_persona_with_creator_brief(dict(_PERSONA_REGISTRY[streamer_id]))
 
         # Load from memory
         if streamer_id:
             profile = self._memory.load_profile(streamer_id)
             if profile.name or profile.editing_history:
                 pref = self._memory.learn_preferences(streamer_id)
-                return {
+                return self._augment_persona_with_creator_brief({
                     "name": profile.name or streamer_id,
                     "energy_level": self._energy_from_mood(pref.mood_preference),
                     "humor_style": "neutral",
                     "catchphrases": [],
                     "style_prefs": dict(pref.enhancement_levels),
-                }
+                })
 
         # Infer from content
-        return self._infer_persona_from_content(caption_timeline)
+        return self._augment_persona_with_creator_brief(
+            self._infer_persona_from_content(caption_timeline)
+        )
 
     def _infer_persona_from_content(self, caption_timeline: CaptionTimeline) -> dict:
         """Infer a persona from video content characteristics."""
@@ -769,6 +870,7 @@ class KairoPipeline:
         best_script: Optional[DNAEditScript] = None
         best_report: Optional[QualityReport] = None
         best_video: Optional[str] = None
+        current_candidate = candidate
 
         while iteration < max_iterations:
             iteration += 1
@@ -778,11 +880,15 @@ class KairoPipeline:
             )
 
             # ---- Architect ----
+            persona_for_iteration = self._blend_persona_with_enhancements(
+                persona, current_enhancements
+            )
+
             edit_script = self._dna_agent.architect(
-                clip_candidate=candidate,
+                clip_candidate=current_candidate,
                 caption_timeline=caption_timeline,
                 template=current_template,
-                persona=persona,
+                persona=persona_for_iteration,
             )
 
             # ---- Evaluate quality (pre-render) ----
@@ -808,6 +914,11 @@ class KairoPipeline:
                 current_template, current_enhancements = self._auto_adjust(
                     quality_report, current_template, current_enhancements,
                 )
+
+                if "duration_fitness" in quality_report.failures:
+                    current_candidate = self._retime_candidate_for_duration(
+                        current_candidate, quality_report, caption_timeline
+                    )
                 logger.info(
                     "Auto-adjusted parameters for iteration %d: %s",
                     iteration + 1, quality_report.suggestions,
@@ -833,8 +944,8 @@ class KairoPipeline:
                 render_time = time.time() - t_render_start
 
         cr = CandidateResult(
-            rank=candidate.rank,
-            candidate=candidate,
+            rank=current_candidate.rank,
+            candidate=current_candidate,
             edit_script=best_script or edit_script,
             quality_report=best_report or quality_report,
             output_video=output_video,
@@ -932,22 +1043,34 @@ class KairoPipeline:
         else:
             dur_min, dur_max = duration_range[0], duration_range[-1]
 
-        if dur_min <= total_output_dur <= dur_max:
+        source_window_dur = max(0.0, float(edit_script.source_end) - float(edit_script.source_start))
+        # Short-source adaptive mode:
+        # if the candidate window itself is not long enough, relax duration expectations.
+        if source_window_dur > 0 and source_window_dur < dur_min * 1.8:
+            effective_min = max(12.0, min(dur_min, source_window_dur * 0.55))
+            effective_max = max(dur_max, source_window_dur * 1.25)
+        else:
+            effective_min = float(dur_min)
+            effective_max = float(dur_max)
+
+        if effective_min <= total_output_dur <= effective_max:
             duration_score = 100.0
         else:
             # Score decreases linearly as we move away from the range
-            if total_output_dur < dur_min:
-                distance = dur_min - total_output_dur
-                range_size = dur_min
+            if total_output_dur < effective_min:
+                distance = effective_min - total_output_dur
+                range_size = effective_min
             else:
-                distance = total_output_dur - dur_max
-                range_size = dur_max
+                distance = total_output_dur - effective_max
+                range_size = effective_max
             duration_score = max(0, 100 - (distance / max(range_size, 1)) * 100)
 
         report.duration_fitness = round(duration_score, 1)
-        report.passes_duration = dur_min * 0.7 <= total_output_dur <= dur_max * 1.3
+        report.passes_duration = effective_min * 0.8 <= total_output_dur <= effective_max * 1.2
         report.details["output_duration"] = round(total_output_dur, 2)
         report.details["target_range"] = [dur_min, dur_max]
+        report.details["effective_target_range"] = [round(effective_min, 2), round(effective_max, 2)]
+        report.details["source_window_duration"] = round(source_window_dur, 2)
 
         # ---- 5. Anti-fluff score ----
         afr = edit_script.anti_fluff_report or {}
@@ -955,12 +1078,18 @@ class KairoPipeline:
         beats_removed = afr.get("beats_removed", 0)
         removal_rate = beats_removed / max(total_raw, 1)
 
+        if source_window_dur > 0 and source_window_dur < dur_min * 1.8:
+            anti_fluff_max = max(_ANTI_FLUFF_MAX_REMOVAL, 0.55)
+        else:
+            anti_fluff_max = _ANTI_FLUFF_MAX_REMOVAL
+
         # Score: 100 when 0% removed, 0 when >= 40% removed
         anti_fluff_score = max(0, 100 - (removal_rate / 0.4) * 100)
         report.anti_fluff_score = round(anti_fluff_score, 1)
-        report.passes_anti_fluff = removal_rate <= _ANTI_FLUFF_MAX_REMOVAL
+        report.passes_anti_fluff = removal_rate <= anti_fluff_max
         report.details["removal_rate"] = round(removal_rate, 4)
         report.details["beats_removed"] = beats_removed
+        report.details["anti_fluff_max_removal"] = round(anti_fluff_max, 3)
 
         # ---- Overall score ----
         # Weighted average: hook > density > pacing > anti-fluff > duration
@@ -1039,7 +1168,7 @@ class KairoPipeline:
                 template["structure"] = structure
                 # Also reduce anti-fluff strictness
                 template["_anti_fluff_min_signals"] = max(
-                    1, template.get("_anti_fluff_min_signals", 2) - 1
+                    0, template.get("_anti_fluff_min_signals", 2) - 1
                 )
 
             elif failure == "pacing_variation":
@@ -1073,7 +1202,7 @@ class KairoPipeline:
             elif failure == "anti_fluff":
                 # Too aggressive fluff removal -- relax thresholds
                 template["_anti_fluff_min_signals"] = max(
-                    1, template.get("_anti_fluff_min_signals", 2) - 1
+                    0, template.get("_anti_fluff_min_signals", 2) - 1
                 )
 
         return template, enhancements
@@ -1168,6 +1297,22 @@ class KairoPipeline:
                     "end": end,
                     "text": text,
                     "style": {},
+                })
+
+        # Fallback: if no timed voiceover/subtitle segments are available,
+        # derive readable captions from beat overlays so output is never "silent text-wise".
+        if not subtitle_segments:
+            for b in render_beats:
+                txt = (b.text_overlay or "").strip()
+                dur = max(0.0, float(b.end) - float(b.start))
+                if not txt or dur < 0.6:
+                    continue
+                seg_end = min(float(b.end), float(b.start) + max(1.2, min(4.0, dur)))
+                subtitle_segments.append({
+                    "start": float(b.start),
+                    "end": seg_end,
+                    "text": txt,
+                    "style": {"bold": True},
                 })
 
         # BGM config
@@ -1273,8 +1418,6 @@ class KairoPipeline:
 
     def _fallback_candidate(self, caption_timeline: CaptionTimeline) -> list[ClipCandidate]:
         """Create a fallback candidate from the full timeline when DVD finds nothing."""
-        from agents.dvd_agent import WindowScore
-
         duration = caption_timeline.duration_sec
         # Use up to 90 seconds from the most interesting part
         target = min(90, duration)
@@ -1306,6 +1449,148 @@ class KairoPipeline:
             annotations=window_anns,
             narrative_arc=None,
         )]
+
+    def _retime_candidate_for_duration(
+        self,
+        candidate: ClipCandidate,
+        quality_report: QualityReport,
+        caption_timeline: CaptionTimeline,
+    ) -> ClipCandidate:
+        """Expand/shrink candidate window when duration fitness fails."""
+        details = quality_report.details or {}
+        out_dur = float(details.get("output_duration", candidate.duration))
+        tr = details.get("target_range", [30, 90])
+        if isinstance(tr, list) and len(tr) >= 2:
+            target_min = float(tr[0])
+            target_max = float(tr[-1])
+        else:
+            target_min, target_max = 30.0, 90.0
+
+        if target_min <= 0:
+            target_min = 10.0
+        if target_max < target_min:
+            target_max = target_min + 30.0
+
+        desired = candidate.duration
+        if out_dur < target_min:
+            grow_ratio = min(2.2, target_min / max(out_dur, 0.5))
+            desired = min(target_max * 1.1, candidate.duration * grow_ratio)
+        elif out_dur > target_max:
+            shrink_ratio = max(0.55, target_max / max(out_dur, 1.0))
+            desired = max(target_min * 0.85, candidate.duration * shrink_ratio)
+        else:
+            return candidate
+
+        duration = caption_timeline.duration_sec
+        desired = max(8.0, min(desired, duration))
+
+        center = (candidate.start + candidate.end) / 2.0
+        new_start = max(0.0, center - desired / 2.0)
+        new_end = min(duration, new_start + desired)
+        new_start = max(0.0, new_end - desired)
+
+        if abs(new_start - candidate.start) < 0.5 and abs(new_end - candidate.end) < 0.5:
+            return candidate
+
+        anns = caption_timeline.slice(new_start, new_end) or candidate.annotations
+        ws = WindowScore(
+            start=new_start,
+            end=new_end,
+            duration=new_end - new_start,
+            game_score=candidate.window_score.game_score,
+            emotion_score=candidate.window_score.emotion_score,
+            audience_score=candidate.window_score.audience_score,
+            triangulation=candidate.window_score.triangulation,
+            peak_composite=candidate.window_score.peak_composite,
+            mean_composite=candidate.window_score.mean_composite,
+            narrative_potential=candidate.window_score.narrative_potential,
+            momentum_score=candidate.window_score.momentum_score,
+        )
+        logger.info(
+            "Retimed candidate rank %d: %.1f-%.1fs -> %.1f-%.1fs for duration recovery",
+            candidate.rank,
+            candidate.start,
+            candidate.end,
+            new_start,
+            new_end,
+        )
+        return ClipCandidate(
+            rank=candidate.rank,
+            start=new_start,
+            end=new_end,
+            duration=new_end - new_start,
+            composite_score=candidate.composite_score,
+            window_score=ws,
+            dominant_signal=candidate.dominant_signal,
+            narrative_potential=candidate.narrative_potential,
+            scoring_strategy=candidate.scoring_strategy,
+            annotations=anns,
+            narrative_arc=candidate.narrative_arc,
+        )
+
+    def _template_from_intent(self) -> Optional[str]:
+        """Infer preferred template from creator brief and target platform."""
+        brief = str(self.config.get("creator_brief") or "").strip().lower()
+        platform = str(self.config.get("target_platform") or "").strip().lower()
+
+        if platform in {"tiktok", "douyin", "shorts", "reels"} and not brief:
+            return "tiktok-vertical"
+
+        combined = f"{platform} {brief}".strip()
+        if not combined:
+            return None
+
+        for keyword, template_id in _INTENT_TEMPLATE_KEYWORDS:
+            if keyword in combined:
+                return template_id
+        return None
+
+    def _augment_persona_with_creator_brief(self, persona: dict) -> dict:
+        """Merge creator brief keywords into persona style signals."""
+        persona = dict(persona or {})
+        brief = str(self.config.get("creator_brief") or "").strip()
+        if not brief:
+            return persona
+
+        lower = brief.lower()
+        style = dict(persona.get("style_prefs") or {})
+
+        if any(k in lower for k in ("fast", "aggressive", "炸", "节奏快", "高能")):
+            style["effects"] = max(float(style.get("effects", 65)), 82.0)
+            style["hook"] = max(float(style.get("hook", 70)), 85.0)
+            persona["energy_level"] = max(int(persona.get("energy_level", 6)), 8)
+        if any(k in lower for k in ("clean", "calm", "慢", "沉浸", "低调")):
+            style["effects"] = min(float(style.get("effects", 65)), 45.0)
+            style["transitions"] = max(float(style.get("transitions", 65)), 75.0)
+            persona["energy_level"] = min(int(persona.get("energy_level", 6)), 5)
+        if any(k in lower for k in ("subtitle", "caption", "字幕", "台词", "解说")):
+            style["subtitles"] = max(float(style.get("subtitles", 60)), 82.0)
+        if any(k in lower for k in ("music", "bgm", "配乐")):
+            style["bgm"] = max(float(style.get("bgm", 65)), 78.0)
+
+        persona["style_prefs"] = style
+        persona["creator_brief"] = brief
+        return persona
+
+    @staticmethod
+    def _blend_persona_with_enhancements(persona: dict, enhancements: dict) -> dict:
+        """Inject learned enhancement levels into persona for DNA decisions."""
+        p = dict(persona or {})
+        style = dict(p.get("style_prefs") or {})
+        enh = enhancements or {}
+        for key in ("bgm", "subtitles", "effects", "hook", "transitions"):
+            val = enh.get(key)
+            if isinstance(val, (int, float)):
+                old_val = float(style.get(key, val))
+                style[key] = round(old_val * 0.4 + float(val) * 0.6, 2)
+
+        energy = int(p.get("energy_level", 6))
+        effects_lvl = float(style.get("effects", 65))
+        hook_lvl = float(style.get("hook", 70))
+        boosted = int(round(energy * 0.6 + ((effects_lvl + hook_lvl) / 2.0) / 10.0 * 0.4))
+        p["energy_level"] = max(1, min(10, boosted))
+        p["style_prefs"] = style
+        return p
 
     # ------------------------------------------------------------------
     # Progress helpers

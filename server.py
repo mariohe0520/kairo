@@ -55,6 +55,7 @@ from memory.streamer_memory import (
     StreamerProfile,
     TemplateRecommendation,
 )
+import config as _cfg  # 加载 .env 并提供统一配置入口
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -120,6 +121,9 @@ _ws_connections: set[WebSocket] = set()
 # Shared services
 _memory = StreamerMemory()
 _render_engine = RenderEngine(hwaccel="auto")
+
+# 并发 pipeline 限流（防止同时处理过多视频耗尽资源）
+_pipeline_semaphore = asyncio.Semaphore(_cfg.MAX_CONCURRENT_PIPELINES)
 
 # ---------------------------------------------------------------------------
 # Template and persona registries (mirroring JS definitions)
@@ -798,6 +802,7 @@ async def download_rendered_video(job_id: str):
         output_path,
         media_type="video/mp4",
         filename=os.path.basename(output_path),
+        content_disposition_type="attachment",
     )
 
 
@@ -806,9 +811,8 @@ async def download_rendered_video(job_id: str):
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/jobs/{job_id}/download")
-async def download_job_output(job_id: str):
-    """Download the output video from any completed job (pipeline or render)."""
+def _resolve_job_output_path(job_id: str) -> str:
+    """Resolve output file path for any completed job."""
     job = _jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
@@ -816,20 +820,74 @@ async def download_job_output(job_id: str):
         raise HTTPException(status_code=400, detail=f"Job not yet completed (status: {job.status.value})")
 
     result = job.result or {}
-    # Try various result keys for the output path
     output_path = (
         result.get("output_video")
         or result.get("output_path")
         or result.get("video_path")
     )
-
     if not output_path or not os.path.isfile(output_path):
         raise HTTPException(status_code=404, detail="Output file not found")
+    return output_path
 
+
+def _ensure_web_playable_mp4(output_path: str) -> str:
+    """
+    Ensure legacy outputs are browser-playable.
+
+    For older jobs rendered before compatibility fixes, auto-generate a repaired
+    MP4 variant and serve that file to the web player.
+    """
+    try:
+        if not output_path.lower().endswith(".mp4"):
+            return output_path
+
+        if _render_engine._is_web_compatible_mp4(output_path):
+            return output_path
+
+        base = Path(output_path)
+        repaired = str(base.with_name(base.stem + "_web").with_suffix(".mp4"))
+        source_mtime = os.path.getmtime(output_path)
+
+        if os.path.isfile(repaired):
+            repaired_mtime = os.path.getmtime(repaired)
+            if repaired_mtime >= source_mtime and _render_engine._is_web_compatible_mp4(repaired):
+                return repaired
+
+        logger.warning("Output not web-compatible, repairing for streaming: %s", output_path)
+        _render_engine._finalize_output(
+            output_path,
+            repaired,
+            {"format": "mp4", "audio_codec": "aac", "crf": "20"},
+        )
+        if os.path.isfile(repaired):
+            return repaired
+    except Exception as exc:
+        logger.warning("Failed to auto-repair MP4 for web playback: %s", exc)
+    return output_path
+
+
+@app.get("/api/jobs/{job_id}/stream")
+async def stream_job_output(job_id: str):
+    """Inline streaming endpoint for HTML5 video player."""
+    output_path = _ensure_web_playable_mp4(_resolve_job_output_path(job_id))
+    return FileResponse(
+        output_path,
+        media_type="video/mp4",
+        content_disposition_type="inline",
+        headers={"Accept-Ranges": "bytes", "Cache-Control": "no-cache"},
+    )
+
+
+@app.get("/api/jobs/{job_id}/download")
+async def download_job_output(job_id: str):
+    """Download the output video from any completed job (pipeline or render)."""
+    output_path = _ensure_web_playable_mp4(_resolve_job_output_path(job_id))
     return FileResponse(
         output_path,
         media_type="video/mp4",
         filename=os.path.basename(output_path),
+        content_disposition_type="attachment",
+        headers={"Accept-Ranges": "bytes"},
     )
 
 
@@ -1201,7 +1259,10 @@ async def run_full_pipeline(
     file_path: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     streamer_id: Optional[str] = Form(None),
+    persona_id: Optional[str] = Form(None),
     template_id: Optional[str] = Form(None),
+    creator_brief: Optional[str] = Form(None),
+    target_platform: Optional[str] = Form(None),
     language: Optional[str] = Form(None),
 ):
     """
@@ -1235,6 +1296,10 @@ async def run_full_pipeline(
     job_id = job.job_id
 
     async def _run_pipeline():
+        # 排队等待 pipeline 槽位（防止资源争抢）
+        job.message = "Queued – waiting for a free pipeline slot"
+        _sync_broadcast(job_id, "queue", 0.0, job.message)
+        await _pipeline_semaphore.acquire()
         try:
             job.status = JobStatus.RUNNING
             job.message = "Starting autonomous pipeline"
@@ -1251,18 +1316,29 @@ async def run_full_pipeline(
             # 1. User explicitly picked a template → use it
             # 2. User picked a persona → use that persona's preferred template
             # 3. Neither → auto-select from content
+            effective_persona = persona_id
+            if not effective_persona and streamer_id and streamer_id in PERSONAS:
+                # Backward-compatible: old UI sends persona id via streamer_id.
+                effective_persona = streamer_id
+
             effective_template = template_id
-            if not effective_template and streamer_id and streamer_id in PERSONAS:
-                effective_template = PERSONAS[streamer_id].get("preferred_template")
+            if not effective_template and effective_persona and effective_persona in PERSONAS:
+                effective_template = PERSONAS[effective_persona].get("preferred_template")
                 if effective_template:
                     logger.info(
                         "Using persona-preferred template: %s for persona %s",
-                        effective_template, streamer_id,
+                        effective_template, effective_persona,
                     )
 
             pipeline_config = {}
             if effective_template:
                 pipeline_config["template_id"] = effective_template
+            if effective_persona:
+                pipeline_config["persona_id"] = effective_persona
+            if creator_brief and creator_brief.strip():
+                pipeline_config["creator_brief"] = creator_brief.strip()
+            if target_platform and target_platform.strip():
+                pipeline_config["target_platform"] = target_platform.strip().lower()
 
             pipeline = KairoPipeline(
                 streamer_id=streamer_id or "default",
@@ -1276,6 +1352,55 @@ async def run_full_pipeline(
                 None, lambda: pipeline.run(source, language=language)
             )
 
+            auto_learning = None
+            try:
+                learner_id = streamer_id or effective_persona
+                if learner_id:
+                    q = float(getattr(result, "quality_score", 0.0) or 0.0)
+                    if q >= 85:
+                        auto_rating, auto_action = 5, "approved"
+                    elif q >= 72:
+                        auto_rating, auto_action = 4, "approved"
+                    elif q >= 60:
+                        auto_rating, auto_action = 3, "modified"
+                    else:
+                        auto_rating, auto_action = 2, "rejected"
+
+                    ct = getattr(result, "caption_timeline", None)
+                    summary = getattr(ct, "summary", {}) or {}
+                    ir = getattr(result, "ingest_result", None)
+                    video_analysis = {
+                        "duration": float(getattr(ir, "duration_sec", 0) or 0),
+                        "mood": summary.get("dominant_emotion", "neutral"),
+                        "intensity": int(float(summary.get("avg_composite", 0.0) or 0.0) * 100),
+                        "game_events": int(summary.get("game_event_count", 0) or 0),
+                        "tags": [
+                            getattr(result, "template_used", "") or "",
+                            getattr(result, "persona_used", "") or "",
+                            pipeline_config.get("target_platform", "") or "",
+                        ],
+                    }
+                    _memory.record_feedback(
+                        streamer_id=learner_id,
+                        clip_id=job_id,
+                        feedback=Feedback(
+                            rating=auto_rating,
+                            action=auto_action,
+                            notes=f"auto-feedback from quality score {q:.1f}",
+                        ),
+                        template_id=getattr(result, "template_used", "") or effective_template or "",
+                        enhancements={},
+                        video_analysis=video_analysis,
+                    )
+                    auto_learning = {
+                        "streamer_id": learner_id,
+                        "rating": auto_rating,
+                        "action": auto_action,
+                        "source": "quality_score",
+                    }
+            except Exception as memory_exc:
+                logger.warning("Auto-learning feedback skipped: %s", memory_exc)
+
             job.status = JobStatus.COMPLETED
             job.progress = 1.0
             job.message = "Pipeline complete"
@@ -1285,6 +1410,10 @@ async def run_full_pipeline(
                 "output_path": result.output_video,  # alias for generic download
                 "quality_score": result.quality_score,
                 "report": result.report,
+                "template_used": getattr(result, "template_used", "") or effective_template or "",
+                "persona_used": getattr(result, "persona_used", "") or effective_persona or "",
+                "creator_brief": pipeline_config.get("creator_brief"),
+                "target_platform": pipeline_config.get("target_platform"),
                 "candidates": [
                     {
                         "rank": c.rank if hasattr(c, "rank") else i + 1,
@@ -1294,13 +1423,19 @@ async def run_full_pipeline(
                         "output_path": c.output_video
                         if hasattr(c, "output_video")
                         else None,
+                        "window": {
+                            "start": c.candidate.start if hasattr(c, "candidate") else None,
+                            "end": c.candidate.end if hasattr(c, "candidate") else None,
+                            "duration": c.candidate.duration if hasattr(c, "candidate") else None,
+                        },
                     }
                     for i, c in enumerate(
                         result.candidates if hasattr(result, "candidates") else []
                     )
                 ],
-                "total_time_sec": result.total_time_sec
-                if hasattr(result, "total_time_sec") else 0,
+                "best_candidate_rank": result.best_candidate_rank if hasattr(result, "best_candidate_rank") else 0,
+                "total_time_sec": result.total_time_sec if hasattr(result, "total_time_sec") else 0,
+                "auto_learning": auto_learning,
             }
             _sync_broadcast(job_id, "complete", 1.0, "Pipeline complete")
 
@@ -1311,6 +1446,8 @@ async def run_full_pipeline(
             job.message = f"Failed: {e}"
             job.completed_at = datetime.now(timezone.utc).isoformat()
             _sync_broadcast(job_id, "error", 0.0, str(e))
+        finally:
+            _pipeline_semaphore.release()
 
     background_tasks.add_task(_run_pipeline)
 

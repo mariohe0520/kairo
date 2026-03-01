@@ -210,10 +210,15 @@ class RenderEngine:
 
             # Phase 4: Burn subtitles
             self._progress("subtitles", 0.9, "Burning subtitles")
+            staged_path = os.path.join(work_dir, f"staged_output.{fmt}")
             if edit_script.subtitle_segments:
-                self._burn_subtitles(audio_mixed_path, edit_script.subtitle_segments, output_path)
+                self._burn_subtitles(audio_mixed_path, edit_script.subtitle_segments, staged_path)
             else:
-                shutil.copy2(audio_mixed_path, output_path)
+                shutil.copy2(audio_mixed_path, staged_path)
+
+            # Phase 5: Final packaging for browser playback compatibility
+            self._progress("package", 0.97, "Finalizing web-playable output")
+            self._finalize_output(staged_path, output_path, edit_script.output_config)
 
             self._progress("done", 1.0, f"Render complete: {output_path}")
             logger.info("Render complete: %s", output_path)
@@ -482,6 +487,8 @@ class RenderEngine:
             "-f", "concat",
             "-safe", "0",
             "-i", concat_list,
+            "-fflags", "+genpts",
+            "-avoid_negative_ts", "make_zero",
             "-c", "copy",
             "-loglevel", "warning",
             output_path,
@@ -712,6 +719,134 @@ class RenderEngine:
 
         _safe_remove(ass_path)
         return output_path
+
+    def _finalize_output(self, input_path: str, output_path: str, output_config: dict) -> str:
+        """
+        Final packaging pass for playback compatibility.
+
+        For MP4 outputs:
+          1) Try fast remux with +faststart and normalized timestamps.
+          2) Validate browser compatibility (codec/pix_fmt/faststart).
+          3) If incompatible, force safe re-encode (H.264 Main + AAC + yuv420p).
+        """
+        fmt = str(output_config.get("format", "mp4")).lower()
+        if fmt != "mp4":
+            shutil.copy2(input_path, output_path)
+            return output_path
+
+        remux_cmd = [
+            self._ffmpeg, "-y",
+            "-i", input_path,
+            "-map", "0:v:0",
+            "-map", "0:a?",
+            "-c:v", "copy",
+            "-c:a", "copy",
+            "-movflags", "+faststart",
+            "-fflags", "+genpts",
+            "-avoid_negative_ts", "make_zero",
+            "-loglevel", "warning",
+            output_path,
+        ]
+        try:
+            self._run_ffmpeg(remux_cmd, "finalize_remux_faststart")
+            if self._is_web_compatible_mp4(output_path):
+                return output_path
+            logger.warning("Remuxed output is not fully browser-compatible; forcing re-encode")
+        except Exception as remux_err:
+            logger.warning("Faststart remux failed, falling back to re-encode: %s", remux_err)
+
+        crf = output_config.get("crf", "18")
+        audio_codec = output_config.get("audio_codec", "aac")
+        encode_cmd = [
+            self._ffmpeg, "-y",
+            "-i", input_path,
+            "-map", "0:v:0",
+            "-map", "0:a?",
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", str(crf),
+            "-profile:v", "main",
+            "-level:v", "4.1",
+            "-pix_fmt", "yuv420p",
+            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p,setsar=1,setdar=dar",
+            "-color_range", "tv",
+            "-c:a", str(audio_codec),
+            "-movflags", "+faststart",
+            "-fflags", "+genpts",
+            "-avoid_negative_ts", "make_zero",
+            "-threads", str(self._threads),
+            "-loglevel", "warning",
+        ]
+
+        # Keep explicit output geometry/FPS if requested.
+        res = output_config.get("resolution")
+        if res and "x" in str(res):
+            encode_cmd.extend(["-s", str(res)])
+        fps = output_config.get("fps")
+        if fps:
+            encode_cmd.extend(["-r", str(fps)])
+        encode_cmd.append(output_path)
+
+        self._run_ffmpeg(encode_cmd, "finalize_reencode_web_compat")
+        return output_path
+
+    def _probe_streams(self, video_path: str) -> dict:
+        """Get ffprobe stream info (video + audio) as JSON."""
+        cmd = [
+            self._ffprobe,
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_streams",
+            "-show_format",
+            video_path,
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            return json.loads(result.stdout or "{}")
+        except (subprocess.TimeoutExpired, json.JSONDecodeError):
+            return {}
+
+    def _has_faststart_moov(self, video_path: str) -> bool:
+        """
+        Heuristic check: moov atom should be near file start for streaming.
+        """
+        try:
+            with open(video_path, "rb") as f:
+                head = f.read(2 * 1024 * 1024)  # first 2MB is enough for typical moov-at-front
+            moov = head.find(b"moov")
+            mdat = head.find(b"mdat")
+            if moov < 0:
+                return False
+            if mdat < 0:
+                return moov >= 0
+            return moov < mdat
+        except OSError:
+            return False
+
+    def _is_web_compatible_mp4(self, video_path: str) -> bool:
+        """
+        Browser-safe gate for HTML5 playback.
+        """
+        info = self._probe_streams(video_path)
+        streams = info.get("streams", [])
+        v = next((s for s in streams if s.get("codec_type") == "video"), None)
+        if not v:
+            return False
+
+        codec = (v.get("codec_name") or "").lower()
+        pix_fmt = (v.get("pix_fmt") or "").lower()
+        profile = (v.get("profile") or "").lower()
+        color_range = (v.get("color_range") or "").lower()
+        sample_aspect_ratio = str(v.get("sample_aspect_ratio") or "").lower()
+
+        codec_ok = codec == "h264"
+        pix_ok = pix_fmt in {"yuv420p", "nv12"}
+        profile_ok = profile in {"baseline", "main", "high", ""}
+        range_ok = color_range in {"tv", "unknown", ""}
+        # Non-square or malformed SAR can render black on some browser/GPU combinations.
+        sar_ok = sample_aspect_ratio in {"", "1:1", "n/a", "0:1"}
+        faststart_ok = self._has_faststart_moov(video_path)
+        return codec_ok and pix_ok and profile_ok and range_ok and sar_ok and faststart_ok
 
     def _generate_ass_file(self, subtitle_segments: list, output_path: str) -> None:
         """Generate an ASS subtitle file from SubtitleSegment list."""

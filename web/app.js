@@ -139,6 +139,7 @@
     serverOnline: false,
     ws: null,
     currentJobId: null,
+    currentJobResult: null,
     selectedTemplate: null,
     selectedPersona: null,
     uploadedFile: null,
@@ -147,6 +148,12 @@
     personas: [],
     jobs: [],
   };
+
+  // 最大上传文件大小（10GB，与后端保持一致）
+  const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024 * 1024;
+
+  // Pipeline 开始时间（用于 ETA 计算）
+  let _pipelineStartTime = null;
 
   // ═══════════════════════════════════════════
   // DOM Helpers
@@ -329,6 +336,15 @@
   // Progress Updates
   // ═══════════════════════════════════════════
 
+  function formatETA(ms) {
+    if (ms <= 0 || !isFinite(ms)) return '';
+    const s = Math.round(ms / 1000);
+    if (s < 60) return `~${s}s`;
+    const m = Math.floor(s / 60);
+    const ss = s % 60;
+    return ss > 0 ? `~${m}m ${ss}s` : `~${m}m`;
+  }
+
   function handleProgressUpdate(data) {
     if (data.job_id !== state.currentJobId) return;
 
@@ -344,7 +360,24 @@
 
     if (fill) fill.style.width = pct + '%';
     if (glow) glow.style.width = pct + '%';
-    if (pctEl) pctEl.textContent = pct + '%';
+
+    // Compute ETA and show alongside percentage
+    let pctText = pct + '%';
+    if (pct > 3 && pct < 99 && _pipelineStartTime) {
+      const elapsed = Date.now() - _pipelineStartTime;
+      const remaining = elapsed / progress * (1 - progress);
+      const eta = formatETA(remaining);
+      if (eta) pctText += ' · ETA ' + eta;
+    }
+    if (pctEl) pctEl.textContent = pctText;
+
+    // Handle queue stage specially
+    if (stage === 'queue') {
+      const msgEl = $('#progress-message');
+      if (msgEl) msgEl.textContent = message || (state.lang === 'zh' ? '排队等待中...' : 'Queued – waiting for pipeline slot...');
+      addLogEntry(message);
+      return;
+    }
 
     // Update message
     const msgEl = $('#progress-message');
@@ -447,9 +480,18 @@
 
       if (state.selectedPersona) {
         formData.append('streamer_id', state.selectedPersona);
+        formData.append('persona_id', state.selectedPersona);
       }
       if (state.selectedTemplate) {
         formData.append('template_id', state.selectedTemplate);
+      }
+
+      const sourceText = (url || '').toLowerCase();
+      const targetPlatform = state.selectedTemplate === 'tiktok-vertical'
+        ? 'tiktok'
+        : (sourceText.includes('douyin') || sourceText.includes('tiktok') || sourceText.includes('shorts') ? 'tiktok' : '');
+      if (targetPlatform) {
+        formData.append('target_platform', targetPlatform);
       }
 
       const data = await api('/api/pipeline', {
@@ -459,6 +501,7 @@
 
       if (data && data.job_id) {
         state.currentJobId = data.job_id;
+        _pipelineStartTime = Date.now();
         showProgressSection();
         showToast(t('toast.pipelineStarted'), 'success');
 
@@ -522,13 +565,37 @@
   }
 
   function onPipelineComplete(data) {
+    if (data && data.result) {
+      state.currentJobResult = data.result;
+    }
     showToast(t('toast.pipelineComplete'), 'success', 6000);
     showResultSection(data);
     refreshJobs();
   }
 
+  function friendlyError(raw) {
+    if (!raw) return t('toast.pipelineFailed');
+    const s = String(raw).toLowerCase();
+    if (s.includes('ffmpeg') && s.includes('not found'))
+      return state.lang === 'zh' ? '缺少 FFmpeg，请运行：brew install ffmpeg' : 'FFmpeg not found — run: brew install ffmpeg';
+    if (s.includes('yt-dlp') || s.includes('ytdlp'))
+      return state.lang === 'zh' ? '视频下载失败，请检查链接是否有效' : 'Download failed — check if the URL is valid';
+    if (s.includes('no candidates') || s.includes('no clip'))
+      return state.lang === 'zh' ? '未检测到高光时刻，换一段视频或换个模板试试' : 'No highlights found — try a different video or template';
+    if (s.includes('size') || s.includes('too large') || s.includes('limit exceeded'))
+      return state.lang === 'zh' ? '文件过大，最大支持 10 GB' : 'File too large — maximum 10 GB';
+    if (s.includes('timeout'))
+      return state.lang === 'zh' ? '处理超时，视频可能过长，请尝试更短的片段' : 'Processing timed out — try a shorter clip';
+    if (s.includes('permission') || s.includes('access denied'))
+      return state.lang === 'zh' ? '文件权限错误，请检查视频文件权限' : 'Permission denied — check file permissions';
+    // Strip "Pipeline error:" prefix and show the rest
+    const clean = raw.replace(/^pipeline error:\s*/i, '').replace(/^failed:\s*/i, '');
+    return clean.length < 120 ? clean : clean.slice(0, 120) + '…';
+  }
+
   function onPipelineFailed(error) {
-    showToast(t('toast.pipelineFailed') + ': ' + error, 'error', 8000);
+    state.currentJobResult = null;
+    showToast(friendlyError(error), 'error', 8000);
     hideProgressSection();
     refreshJobs();
   }
@@ -539,6 +606,7 @@
 
   function simulatePipeline() {
     state.currentJobId = 'demo_' + Date.now();
+    _pipelineStartTime = Date.now();
     showProgressSection();
     showToast(t('toast.pipelineStarted'), 'success');
 
@@ -609,9 +677,13 @@
     // Set up video player if we have a result
     const video = $('#result-video');
     const overlay = $('#player-overlay');
+    const streamUrl = state.currentJobId ? `${API_BASE}/api/jobs/${state.currentJobId}/stream?t=${Date.now()}` : '';
 
-    if (data && data.result && (data.result.output_video || data.result.output_path)) {
-      video.src = `${API_BASE}/api/jobs/${state.currentJobId}/download`;
+    if (data && data.result && (data.result.output_video || data.result.output_path) && streamUrl) {
+      video.src = streamUrl;
+      video.preload = 'metadata';
+      video.playsInline = true;
+      video.load();
       overlay.classList.remove('hidden');
     } else {
       // Demo mode - no actual video
@@ -847,6 +919,7 @@
   function viewJob(job) {
     if (job.status === 'completed' && job.result) {
       state.currentJobId = job.job_id;
+      state.currentJobResult = job.result;
       showResultSection(job);
     }
   }
@@ -868,10 +941,30 @@
     if (state.serverOnline) {
       try {
         const formData = new FormData();
-        formData.append('streamer_id', state.selectedPersona || 'default');
+        const streamerId =
+          state.selectedPersona ||
+          state.currentJobResult?.persona_used ||
+          'default';
+        const templateId =
+          state.currentJobResult?.template_used ||
+          state.selectedTemplate ||
+          '';
+
+        formData.append('streamer_id', streamerId);
         formData.append('clip_id', state.currentJobId);
         formData.append('rating', state.feedbackRating || 3);
         formData.append('action', action);
+        if (templateId) {
+          formData.append('template_id', templateId);
+        }
+        if (state.currentJobResult?.quality_score != null) {
+          const videoAnalysis = {
+            quality_score: state.currentJobResult.quality_score,
+            target_platform: state.currentJobResult.target_platform || '',
+            tags: [templateId, state.currentJobResult.persona_used || ''].filter(Boolean),
+          };
+          formData.append('video_analysis_json', JSON.stringify(videoAnalysis));
+        }
 
         await api('/api/feedback', {
           method: 'POST',
@@ -948,11 +1041,31 @@
     });
   }
 
+  function formatFileSize(bytes) {
+    if (bytes >= 1024 * 1024 * 1024) return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+    if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(0) + ' MB';
+    return (bytes / 1024).toFixed(0) + ' KB';
+  }
+
   function handleFileSelected(file) {
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      showToast(
+        state.lang === 'zh'
+          ? `文件过大（${formatFileSize(file.size)}），最大支持 10 GB`
+          : `File too large (${formatFileSize(file.size)}) — max 10 GB`,
+        'error', 6000
+      );
+      return;
+    }
     state.uploadedFile = file;
     const urlInput = $('#url-input');
     urlInput.value = file.name;
-    showToast(`File selected: ${file.name}`, 'success');
+    showToast(
+      state.lang === 'zh'
+        ? `已选择文件：${file.name}（${formatFileSize(file.size)}）`
+        : `File selected: ${file.name} (${formatFileSize(file.size)})`,
+      'success'
+    );
   }
 
   // ═══════════════════════════════════════════
@@ -1028,6 +1141,7 @@
     // Cancel button
     $('#btn-cancel').addEventListener('click', () => {
       state.currentJobId = null;
+      state.currentJobResult = null;
       if (_pollingInterval) {
         clearInterval(_pollingInterval);
         _pollingInterval = null;
@@ -1043,6 +1157,26 @@
       video.play();
       overlay.classList.add('hidden');
     });
+
+    // Video reliability hooks: auto-hide overlay when playable, surface decode failures.
+    const resultVideo = $('#result-video');
+    const resultOverlay = $('#player-overlay');
+    if (resultVideo && resultOverlay) {
+      resultVideo.addEventListener('loadedmetadata', () => {
+        if (Number.isFinite(resultVideo.duration) && resultVideo.duration > 0) {
+          resultOverlay.classList.remove('hidden');
+        }
+      });
+      resultVideo.addEventListener('playing', () => {
+        resultOverlay.classList.add('hidden');
+      });
+      resultVideo.addEventListener('error', () => {
+        const mediaErr = resultVideo.error;
+        const errCode = mediaErr ? mediaErr.code : 0;
+        console.error('[Kairo] video decode/playback error', errCode, resultVideo.currentSrc);
+        showToast('播放器解码失败，已生成下载文件；请刷新后重试', 'error');
+      });
+    }
 
     $('#btn-download').addEventListener('click', () => {
       if (state.serverOnline && state.currentJobId) {
@@ -1070,6 +1204,7 @@
     $('#btn-new-clip').addEventListener('click', () => {
       $('#result').classList.add('hidden');
       state.currentJobId = null;
+      state.currentJobResult = null;
       state.feedbackRating = 0;
       $('#url-input').value = '';
       state.uploadedFile = null;

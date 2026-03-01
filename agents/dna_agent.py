@@ -295,6 +295,7 @@ class DNAAgent:
         )
 
         all_beats = hook_beats + arc_beats
+        all_beats = self._apply_persona_style_tuning(all_beats, persona, mood)
 
         # --- Assign output timeline positions ---
         all_beats = self._assign_output_times(all_beats)
@@ -357,6 +358,82 @@ class DNAAgent:
             clip_id, len(validated_beats), total_duration, removed,
         )
         return script
+
+    def _apply_persona_style_tuning(
+        self,
+        beats: list[EditBeat],
+        persona: dict,
+        mood: str,
+    ) -> list[EditBeat]:
+        """Tune beat-level directives from persona style preferences."""
+        if not beats:
+            return beats
+
+        style = dict(persona.get("style_prefs") or {})
+        effects_level = float(style.get("effects", 65))
+        transitions_level = float(style.get("transitions", 60))
+        subtitles_level = float(style.get("subtitles", 60))
+        hook_level = float(style.get("hook", 70))
+        energy = int(persona.get("energy_level", 5))
+        catchphrases = list(persona.get("catchphrases") or [])
+
+        for beat in beats:
+            # Strong hook preference: punchier opening text treatment.
+            if beat.phase == "hook":
+                if hook_level >= 82:
+                    if not beat.text_overlay and catchphrases:
+                        beat.text_overlay = catchphrases[0]
+                    beat.text_style = {
+                        **(beat.text_style or {}),
+                        "size": max(72, int((beat.text_style or {}).get("size", 64))),
+                        "animation": "slam",
+                    }
+                elif hook_level <= 45 and beat.text_style:
+                    beat.text_style = {
+                        **beat.text_style,
+                        "size": min(56, int((beat.text_style or {}).get("size", 64))),
+                        "animation": "fadeIn",
+                    }
+
+            if beat.beat_type != "transition":
+                if effects_level >= 78 and beat.effect == "none" and beat.intensity >= 60:
+                    beat.effect = "zoom" if mood != "chill" else "vignette"
+                    beat.effect_params = beat.effect_params or {"factor": 1.18}
+                elif effects_level <= 42 and beat.effect in ("shake", "flash"):
+                    beat.effect = "none"
+                    beat.effect_params = {}
+
+                # Energy controls pacing aggressiveness.
+                if energy >= 8 and beat.phase in ("rising", "climax") and beat.playback_speed >= 0.8:
+                    beat.playback_speed = min(1.35, round(beat.playback_speed * 1.12, 3))
+                elif energy <= 4 and beat.phase == "resolution":
+                    beat.playback_speed = max(0.78, round(beat.playback_speed * 0.92, 3))
+
+                # Subtitle-heavy style: place compact quote overlays on speech moments.
+                if subtitles_level >= 80 and beat.has_speech_content and not beat.text_overlay:
+                    speech_marker = 'Speech: "'
+                    if speech_marker in beat.description:
+                        snippet = beat.description.split(speech_marker, 1)[1].strip().rstrip('"')
+                        if snippet:
+                            beat.text_overlay = snippet[:34]
+                            beat.text_style = {
+                                "font": "Inter",
+                                "size": 36,
+                                "color": "#FFFFFF",
+                                "stroke": "#000000",
+                                "position": "bottom",
+                                "animation": "fadeIn",
+                            }
+
+            # Transition personality.
+            if transitions_level >= 75 and beat.transition_in == "cut" and beat.phase != "hook":
+                beat.transition_in = "whip" if mood in ("intense", "chaotic") else "crossfade"
+                beat.transition_in_duration = max(beat.transition_in_duration, 0.2)
+            elif transitions_level <= 35 and beat.transition_in not in ("cut",):
+                beat.transition_in = "cut"
+                beat.transition_in_duration = 0.0
+
+        return beats
 
     # ------------------------------------------------------------------
     # Hook builder (first 0-3 seconds)

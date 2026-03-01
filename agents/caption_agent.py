@@ -357,7 +357,7 @@ class CaptionAgent:
 
     def _analyze_frame_vlm(self, frame_path: str, context: dict) -> FrameAnalysis:
         """Run MLX-VLM on a single frame and parse the structured JSON output."""
-        assert _mlx_vlm is not None and _vlm_model is not None
+        assert _mlx_vlm is not None and _vlm_model is not None and _vlm_processor is not None
 
         prompt = _VLM_PROMPT.format(
             transcript_context=context.get("transcript_text", ""),
@@ -365,7 +365,7 @@ class CaptionAgent:
         )
 
         # mlx_vlm.generate accepts image path + text prompt
-        raw_output: str = _mlx_vlm.generate(
+        raw_output = _mlx_vlm.generate(
             _vlm_model,
             _vlm_processor,
             prompt,
@@ -373,6 +373,10 @@ class CaptionAgent:
             max_tokens=self.max_tokens,
             verbose=False,
         )
+        if raw_output is None:
+            raise RuntimeError("mlx_vlm.generate returned None")
+        if not isinstance(raw_output, str):
+            raw_output = str(raw_output)
 
         parsed = self._parse_vlm_json(raw_output)
 
@@ -673,6 +677,9 @@ class CaptionAgent:
         This method strips that away and returns the parsed dict, or an empty
         dict on failure.
         """
+        if not isinstance(raw, str) or not raw.strip():
+            return {}
+
         # Strip markdown code fences
         cleaned = re.sub(r"```(?:json)?\s*", "", raw)
         cleaned = cleaned.strip().rstrip("`").strip()

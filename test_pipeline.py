@@ -18,6 +18,7 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -44,6 +45,11 @@ parser.add_argument(
 args = parser.parse_args()
 
 BASE = f"http://{args.host}:{args.port}"
+
+# Local integration tests should bypass system HTTP proxies for localhost calls.
+os.environ.setdefault("NO_PROXY", "127.0.0.1,localhost")
+os.environ.setdefault("no_proxy", "127.0.0.1,localhost")
+LOCAL_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -73,7 +79,7 @@ def _request(method: str, path: str, data: dict | None = None, form: dict | None
 
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with LOCAL_OPENER.open(req, timeout=30) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         body_text = e.read().decode(errors="replace")
@@ -258,7 +264,7 @@ else:
                             download_url = f"{BASE}/api/jobs/{job_id}/download"
                             try:
                                 req = urllib.request.Request(download_url, method="HEAD")
-                                with urllib.request.urlopen(req, timeout=10) as resp:
+                                with LOCAL_OPENER.open(req, timeout=10) as resp:
                                     content_type = resp.headers.get("Content-Type", "")
                                     record(
                                         "download endpoint works",

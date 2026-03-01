@@ -139,6 +139,7 @@
     serverOnline: false,
     ws: null,
     currentJobId: null,
+    currentJobResult: null,
     selectedTemplate: null,
     selectedPersona: null,
     uploadedFile: null,
@@ -147,6 +148,12 @@
     personas: [],
     jobs: [],
   };
+
+  // 最大上传文件大小（10GB，与后端保持一致）
+  const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024 * 1024;
+
+  // Pipeline 开始时间（用于 ETA 计算）
+  let _pipelineStartTime = null;
 
   // ═══════════════════════════════════════════
   // DOM Helpers
@@ -252,12 +259,16 @@
     const label = $('#status-label');
 
     try {
-      const data = await fetch(`${API_BASE}/api/health`, { signal: AbortSignal.timeout(3000) });
-      if (data && data.ok) {
-        state.serverOnline = true;
-        dot.className = 'status-dot connected';
-        label.textContent = t('status.connected');
-        return true;
+      const resp = await fetch(`${API_BASE}/api/health`, { signal: AbortSignal.timeout(3000) });
+      if (resp && resp.ok) {
+        // Parse the JSON body to verify it's a real Kairo server
+        const body = await resp.json();
+        if (body && body.status === 'ok') {
+          state.serverOnline = true;
+          dot.className = 'status-dot connected';
+          label.textContent = t('status.connected');
+          return true;
+        }
       }
     } catch (e) {
       // Server not reachable
@@ -273,15 +284,19 @@
   // WebSocket
   // ═══════════════════════════════════════════
 
+  let _wsReconnectDelay = 1000;
+  const _WS_MAX_RECONNECT_DELAY = 30000;
+
   function connectWebSocket() {
     if (!state.serverOnline || IS_DEMO) return;
-    if (state.ws && state.ws.readyState <= 1) return;
+    if (state.ws && (state.ws.readyState === WebSocket.CONNECTING || state.ws.readyState === WebSocket.OPEN)) return;
 
     try {
       state.ws = new WebSocket(`${WS_BASE}/ws/progress`);
 
       state.ws.onopen = () => {
         console.log('[WS] Connected');
+        _wsReconnectDelay = 1000; // Reset backoff on successful connection
       };
 
       state.ws.onmessage = (evt) => {
@@ -296,21 +311,39 @@
       };
 
       state.ws.onclose = () => {
-        console.log('[WS] Disconnected');
-        setTimeout(connectWebSocket, 5000);
+        console.log('[WS] Disconnected, reconnecting in', _wsReconnectDelay, 'ms');
+        state.ws = null;
+        // Only reconnect if server is still believed to be online
+        if (state.serverOnline) {
+          setTimeout(connectWebSocket, _wsReconnectDelay);
+          _wsReconnectDelay = Math.min(_wsReconnectDelay * 1.5, _WS_MAX_RECONNECT_DELAY);
+        }
       };
 
       state.ws.onerror = () => {
-        state.ws.close();
+        // onclose will fire after onerror, so just let it handle reconnection
+        if (state.ws) {
+          state.ws.close();
+        }
       };
     } catch (e) {
       console.error('[WS] Connection failed:', e);
+      state.ws = null;
     }
   }
 
   // ═══════════════════════════════════════════
   // Progress Updates
   // ═══════════════════════════════════════════
+
+  function formatETA(ms) {
+    if (ms <= 0 || !isFinite(ms)) return '';
+    const s = Math.round(ms / 1000);
+    if (s < 60) return `~${s}s`;
+    const m = Math.floor(s / 60);
+    const ss = s % 60;
+    return ss > 0 ? `~${m}m ${ss}s` : `~${m}m`;
+  }
 
   function handleProgressUpdate(data) {
     if (data.job_id !== state.currentJobId) return;
@@ -327,7 +360,24 @@
 
     if (fill) fill.style.width = pct + '%';
     if (glow) glow.style.width = pct + '%';
-    if (pctEl) pctEl.textContent = pct + '%';
+
+    // Compute ETA and show alongside percentage
+    let pctText = pct + '%';
+    if (pct > 3 && pct < 99 && _pipelineStartTime) {
+      const elapsed = Date.now() - _pipelineStartTime;
+      const remaining = elapsed / progress * (1 - progress);
+      const eta = formatETA(remaining);
+      if (eta) pctText += ' · ETA ' + eta;
+    }
+    if (pctEl) pctEl.textContent = pctText;
+
+    // Handle queue stage specially
+    if (stage === 'queue') {
+      const msgEl = $('#progress-message');
+      if (msgEl) msgEl.textContent = message || (state.lang === 'zh' ? '排队等待中...' : 'Queued – waiting for pipeline slot...');
+      addLogEntry(message);
+      return;
+    }
 
     // Update message
     const msgEl = $('#progress-message');
@@ -340,7 +390,7 @@
     addLogEntry(message);
 
     // Check for completion
-    if (data.stage === 'complete' || progress >= 1) {
+    if (data.stage === 'complete' || (data.stage !== 'error' && progress >= 1)) {
       onPipelineComplete(data);
     } else if (data.stage === 'error') {
       onPipelineFailed(message);
@@ -430,9 +480,18 @@
 
       if (state.selectedPersona) {
         formData.append('streamer_id', state.selectedPersona);
+        formData.append('persona_id', state.selectedPersona);
       }
       if (state.selectedTemplate) {
         formData.append('template_id', state.selectedTemplate);
+      }
+
+      const sourceText = (url || '').toLowerCase();
+      const targetPlatform = state.selectedTemplate === 'tiktok-vertical'
+        ? 'tiktok'
+        : (sourceText.includes('douyin') || sourceText.includes('tiktok') || sourceText.includes('shorts') ? 'tiktok' : '');
+      if (targetPlatform) {
+        formData.append('target_platform', targetPlatform);
       }
 
       const data = await api('/api/pipeline', {
@@ -442,6 +501,7 @@
 
       if (data && data.job_id) {
         state.currentJobId = data.job_id;
+        _pipelineStartTime = Date.now();
         showProgressSection();
         showToast(t('toast.pipelineStarted'), 'success');
 
@@ -457,11 +517,21 @@
     }
   }
 
+  let _pollingInterval = null;
+
   function startPolling(jobId) {
-    const interval = setInterval(async () => {
+    // Clear any existing polling
+    if (_pollingInterval) {
+      clearInterval(_pollingInterval);
+      _pollingInterval = null;
+    }
+    _pollingInterval = setInterval(async () => {
+      const interval = _pollingInterval;
       try {
+        // Stop polling if job changed
+        if (state.currentJobId !== jobId) { clearInterval(interval); _pollingInterval = null; return; }
         const data = await api(`/api/jobs/${jobId}`);
-        if (!data) { clearInterval(interval); return; }
+        if (!data) { clearInterval(interval); _pollingInterval = null; return; }
 
         // Map the pipeline's internal stage names to our UI stages
         let stage = data.job_type || 'pipeline';
@@ -481,9 +551,11 @@
 
         if (data.status === 'completed') {
           clearInterval(interval);
+          _pollingInterval = null;
           onPipelineComplete(data);
         } else if (data.status === 'failed') {
           clearInterval(interval);
+          _pollingInterval = null;
           onPipelineFailed(data.error || 'Unknown error');
         }
       } catch (e) {
@@ -493,13 +565,37 @@
   }
 
   function onPipelineComplete(data) {
+    if (data && data.result) {
+      state.currentJobResult = data.result;
+    }
     showToast(t('toast.pipelineComplete'), 'success', 6000);
     showResultSection(data);
     refreshJobs();
   }
 
+  function friendlyError(raw) {
+    if (!raw) return t('toast.pipelineFailed');
+    const s = String(raw).toLowerCase();
+    if (s.includes('ffmpeg') && s.includes('not found'))
+      return state.lang === 'zh' ? '缺少 FFmpeg，请运行：brew install ffmpeg' : 'FFmpeg not found — run: brew install ffmpeg';
+    if (s.includes('yt-dlp') || s.includes('ytdlp'))
+      return state.lang === 'zh' ? '视频下载失败，请检查链接是否有效' : 'Download failed — check if the URL is valid';
+    if (s.includes('no candidates') || s.includes('no clip'))
+      return state.lang === 'zh' ? '未检测到高光时刻，换一段视频或换个模板试试' : 'No highlights found — try a different video or template';
+    if (s.includes('size') || s.includes('too large') || s.includes('limit exceeded'))
+      return state.lang === 'zh' ? '文件过大，最大支持 10 GB' : 'File too large — maximum 10 GB';
+    if (s.includes('timeout'))
+      return state.lang === 'zh' ? '处理超时，视频可能过长，请尝试更短的片段' : 'Processing timed out — try a shorter clip';
+    if (s.includes('permission') || s.includes('access denied'))
+      return state.lang === 'zh' ? '文件权限错误，请检查视频文件权限' : 'Permission denied — check file permissions';
+    // Strip "Pipeline error:" prefix and show the rest
+    const clean = raw.replace(/^pipeline error:\s*/i, '').replace(/^failed:\s*/i, '');
+    return clean.length < 120 ? clean : clean.slice(0, 120) + '…';
+  }
+
   function onPipelineFailed(error) {
-    showToast(t('toast.pipelineFailed') + ': ' + error, 'error', 8000);
+    state.currentJobResult = null;
+    showToast(friendlyError(error), 'error', 8000);
     hideProgressSection();
     refreshJobs();
   }
@@ -510,6 +606,7 @@
 
   function simulatePipeline() {
     state.currentJobId = 'demo_' + Date.now();
+    _pipelineStartTime = Date.now();
     showProgressSection();
     showToast(t('toast.pipelineStarted'), 'success');
 
@@ -580,9 +677,13 @@
     // Set up video player if we have a result
     const video = $('#result-video');
     const overlay = $('#player-overlay');
+    const streamUrl = state.currentJobId ? `${API_BASE}/api/jobs/${state.currentJobId}/stream?t=${Date.now()}` : '';
 
-    if (data && data.result && (data.result.output_video || data.result.output_path)) {
-      video.src = `${API_BASE}/api/jobs/${state.currentJobId}/download`;
+    if (data && data.result && (data.result.output_video || data.result.output_path) && streamUrl) {
+      video.src = streamUrl;
+      video.preload = 'metadata';
+      video.playsInline = true;
+      video.load();
       overlay.classList.remove('hidden');
     } else {
       // Demo mode - no actual video
@@ -773,17 +874,16 @@
 
   function renderJobHistory(jobs) {
     const list = $('#history-list');
-    const empty = $('#history-empty');
 
     if (!jobs || jobs.length === 0) {
-      list.innerHTML = '';
-      list.appendChild(empty);
-      empty.classList.remove('hidden');
+      list.innerHTML = '<div class="history-empty" id="history-empty">' +
+        '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="2" y="3" width="20" height="18" rx="2"/><line x1="2" y1="8" x2="22" y2="8"/></svg>' +
+        '<p>' + t('history.empty') + '</p>' +
+        '</div>';
       return;
     }
 
     list.innerHTML = '';
-    empty.classList.add('hidden');
 
     const statusIcons = {
       completed: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
@@ -819,6 +919,7 @@
   function viewJob(job) {
     if (job.status === 'completed' && job.result) {
       state.currentJobId = job.job_id;
+      state.currentJobResult = job.result;
       showResultSection(job);
     }
   }
@@ -840,10 +941,30 @@
     if (state.serverOnline) {
       try {
         const formData = new FormData();
-        formData.append('streamer_id', state.selectedPersona || 'default');
+        const streamerId =
+          state.selectedPersona ||
+          state.currentJobResult?.persona_used ||
+          'default';
+        const templateId =
+          state.currentJobResult?.template_used ||
+          state.selectedTemplate ||
+          '';
+
+        formData.append('streamer_id', streamerId);
         formData.append('clip_id', state.currentJobId);
         formData.append('rating', state.feedbackRating || 3);
         formData.append('action', action);
+        if (templateId) {
+          formData.append('template_id', templateId);
+        }
+        if (state.currentJobResult?.quality_score != null) {
+          const videoAnalysis = {
+            quality_score: state.currentJobResult.quality_score,
+            target_platform: state.currentJobResult.target_platform || '',
+            tags: [templateId, state.currentJobResult.persona_used || ''].filter(Boolean),
+          };
+          formData.append('video_analysis_json', JSON.stringify(videoAnalysis));
+        }
 
         await api('/api/feedback', {
           method: 'POST',
@@ -920,11 +1041,31 @@
     });
   }
 
+  function formatFileSize(bytes) {
+    if (bytes >= 1024 * 1024 * 1024) return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+    if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(0) + ' MB';
+    return (bytes / 1024).toFixed(0) + ' KB';
+  }
+
   function handleFileSelected(file) {
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      showToast(
+        state.lang === 'zh'
+          ? `文件过大（${formatFileSize(file.size)}），最大支持 10 GB`
+          : `File too large (${formatFileSize(file.size)}) — max 10 GB`,
+        'error', 6000
+      );
+      return;
+    }
     state.uploadedFile = file;
     const urlInput = $('#url-input');
     urlInput.value = file.name;
-    showToast(`File selected: ${file.name}`, 'success');
+    showToast(
+      state.lang === 'zh'
+        ? `已选择文件：${file.name}（${formatFileSize(file.size)}）`
+        : `File selected: ${file.name} (${formatFileSize(file.size)})`,
+      'success'
+    );
   }
 
   // ═══════════════════════════════════════════
@@ -1000,6 +1141,11 @@
     // Cancel button
     $('#btn-cancel').addEventListener('click', () => {
       state.currentJobId = null;
+      state.currentJobResult = null;
+      if (_pollingInterval) {
+        clearInterval(_pollingInterval);
+        _pollingInterval = null;
+      }
       hideProgressSection();
       showToast('Pipeline cancelled', 'info');
     });
@@ -1011,6 +1157,26 @@
       video.play();
       overlay.classList.add('hidden');
     });
+
+    // Video reliability hooks: auto-hide overlay when playable, surface decode failures.
+    const resultVideo = $('#result-video');
+    const resultOverlay = $('#player-overlay');
+    if (resultVideo && resultOverlay) {
+      resultVideo.addEventListener('loadedmetadata', () => {
+        if (Number.isFinite(resultVideo.duration) && resultVideo.duration > 0) {
+          resultOverlay.classList.remove('hidden');
+        }
+      });
+      resultVideo.addEventListener('playing', () => {
+        resultOverlay.classList.add('hidden');
+      });
+      resultVideo.addEventListener('error', () => {
+        const mediaErr = resultVideo.error;
+        const errCode = mediaErr ? mediaErr.code : 0;
+        console.error('[Kairo] video decode/playback error', errCode, resultVideo.currentSrc);
+        showToast('播放器解码失败，已生成下载文件；请刷新后重试', 'error');
+      });
+    }
 
     $('#btn-download').addEventListener('click', () => {
       if (state.serverOnline && state.currentJobId) {
@@ -1038,6 +1204,7 @@
     $('#btn-new-clip').addEventListener('click', () => {
       $('#result').classList.add('hidden');
       state.currentJobId = null;
+      state.currentJobResult = null;
       state.feedbackRating = 0;
       $('#url-input').value = '';
       state.uploadedFile = null;
