@@ -57,6 +57,10 @@ from memory.streamer_memory import (
 )
 import config as _cfg  # 加载 .env 并提供统一配置入口
 
+# 让 ARK / OpenAI SDK 不走本地代理（ClashX / VPN 等）
+# 防止 "ProxyError: Unable to connect to proxy" 错误
+os.environ.setdefault("NO_PROXY", "ark.cn-beijing.volces.com,api.anthropic.com,api.openai.com")
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------

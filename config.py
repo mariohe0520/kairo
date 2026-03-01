@@ -39,7 +39,7 @@ OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")
 #: 火山引擎 ARK / 豆包 API Key（OpenAI 兼容格式）
 ARK_API_KEY: str = os.environ.get("ARK_API_KEY", "")
 ARK_BASE_URL: str = os.environ.get("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
-ARK_MODEL: str = os.environ.get("ARK_MODEL", "doubao-seed-1-6-250615")
+ARK_MODEL: str = os.environ.get("ARK_MODEL", "doubao-seed-2-0-pro-260215")
 
 # ---------------------------------------------------------------------------
 # 服务器配置

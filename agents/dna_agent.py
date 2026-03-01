@@ -130,10 +130,17 @@ _LLM_AVAILABLE: Optional[bool] = None
 
 
 def _check_llm() -> bool:
-    """Check if Ollama is reachable."""
+    """Check if any LLM is available (Ollama or ARK)."""
     global _LLM_AVAILABLE
     if _LLM_AVAILABLE is not None:
         return _LLM_AVAILABLE
+    # Check ARK first (faster, no subprocess)
+    import os
+    if os.environ.get("ARK_API_KEY"):
+        _LLM_AVAILABLE = True
+        logger.info("ARK (豆包) LLM available for narrative generation")
+        return True
+    # Check local Ollama
     try:
         result = subprocess.run(
             ["ollama", "list"], capture_output=True, text=True, timeout=5
@@ -142,12 +149,36 @@ def _check_llm() -> bool:
     except Exception:
         _LLM_AVAILABLE = False
     if not _LLM_AVAILABLE:
-        logger.info("Ollama not available -- using template-based generation")
+        logger.info("No LLM available -- using template-based generation")
     return _LLM_AVAILABLE
 
 
 def _llm_generate(prompt: str, model: str = "llama3.2:3b", max_tokens: int = 512) -> str:
-    """Call Ollama to generate text.  Returns empty string on failure."""
+    """Generate text via ARK (豆包) or Ollama fallback. Returns empty string on failure."""
+    import os
+    ark_key = os.environ.get("ARK_API_KEY")
+
+    # Try ARK first if configured
+    if ark_key:
+        try:
+            import openai
+            os.environ.setdefault("NO_PROXY", "ark.cn-beijing.volces.com")
+            ark_model = os.environ.get("ARK_MODEL", "doubao-seed-2-0-pro-260215")
+            ark_base = os.environ.get("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
+            client = openai.OpenAI(api_key=ark_key, base_url=ark_base)
+            r = client.chat.completions.create(
+                model=ark_model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+                temperature=0.8,
+            )
+            text = (r.choices[0].message.content or "").strip()
+            if text:
+                return text
+        except Exception as exc:
+            logger.debug("ARK narrative generation failed: %s", exc)
+
+    # Fallback: local Ollama
     try:
         result = subprocess.run(
             ["ollama", "run", model, prompt],
@@ -156,7 +187,7 @@ def _llm_generate(prompt: str, model: str = "llama3.2:3b", max_tokens: int = 512
         if result.returncode == 0:
             return result.stdout.strip()
     except Exception as exc:
-        logger.debug("LLM generation failed: %s", exc)
+        logger.debug("Ollama generation failed: %s", exc)
     return ""
 
 
