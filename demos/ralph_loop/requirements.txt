@@ -1,0 +1,12 @@
+# Ralph Loop Demo Dependencies
+numpy>=1.26.0
+Pillow>=10.0.0
+
+# Optional: Playwright for login-gated platforms
+# playwright>=1.40.0
+
+# Optional: ASR
+# openai-whisper>=20240930
+
+# System deps (not pip):
+# ffmpeg, yt-dlp
